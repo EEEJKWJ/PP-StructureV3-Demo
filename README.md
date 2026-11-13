@@ -126,6 +126,22 @@ python test_fintabnet.py --limit 10
 `D:\dataset\fintabnet-pubtables-full\test\test-00000-of-00006.parquet`，也可通过
 `--parquet` 指定其他分片。
 
+### 基线检查
+
+纯函数回归测试：
+
+```bash
+python scripts/check_baseline.py
+```
+
+包含 CUDA 和 FinTabNet 真实样本检查：
+
+```bash
+python scripts/check_baseline.py --gpu --limit 3
+```
+
+基线环境和接口说明见 [docs/BASELINE.md](docs/BASELINE.md)。
+
 ## 结构化输出示例
 
 ```json
