@@ -62,11 +62,23 @@ source .venv/bin/activate
 # 安装依赖
 pip install -r requirements.txt
 
-# 启动
-python server.py
+# 启动（推荐）
+python launch_pp_structurev3.py
 ```
 
-访问 http://localhost:3001
+访问 http://localhost:3003
+
+`launch_pp_structurev3.py` 会自动切换到项目目录，因此也可以从其他工作目录启动：
+
+```bash
+python path/to/PP-StructureV3-Demo/launch_pp_structurev3.py
+```
+
+如需修改监听地址或端口：
+
+```bash
+python launch_pp_structurev3.py --host 127.0.0.1 --port 3005
+```
 
 首次启动会自动下载模型（版面检测 ~127MB + OCR ~164MB），页面顶部显示加载状态。
 
@@ -74,7 +86,7 @@ python server.py
 
 ```bash
 export HF_ENDPOINT=https://hf-mirror.com
-python server.py
+python launch_pp_structurev3.py
 ```
 
 ### GPU 加速
@@ -82,7 +94,20 @@ python server.py
 有 NVIDIA GPU 时自动启用：
 - 版面检测模型加载到 GPU
 - OCR 自动切换为 server 版（精度更高）
-- 安装 GPU 版 onnxruntime：`pip install onnxruntime-gpu`
+- 安装与 CUDA 12.x / cuDNN 9 匹配的 ONNX Runtime GPU：
+
+```bash
+pip uninstall -y onnxruntime
+pip install "onnxruntime-gpu==1.23.2"
+```
+
+`onnxruntime` 和 `onnxruntime-gpu` 不能同时安装，否则可能加载到 CPU 动态库并在
+不报错的情况下回退到 CPU。项目启动时会检查 CUDA provider；GPU 就绪时 OCR
+推理由 `CUDAExecutionProvider` 执行。
+
+`rapid_table` 和当前版本的 PyMuPDF 包元数据仍声明依赖 `onnxruntime`，因此在仅安装
+`onnxruntime-gpu` 后运行 `pip check` 可能报告“onnxruntime is not installed”。
+这是同模块不同发行包的元数据限制，不影响 GPU 版导入和推理；不要为此重新安装 CPU 包。
 
 ## 结构化输出示例
 
@@ -118,6 +143,7 @@ python server.py
 ## 项目结构
 
 ```
+├── launch_pp_structurev3.py # Python 启动器（自动切换项目目录）
 ├── server.py           # FastAPI 后端（版面检测 + 文本提取 + 结构化输出）
 ├── index.html          # 单文件前端（上传 + 可视化 + 双向联动）
 ├── ppocr5.py           # PP-OCRv5 ONNX 推理引擎

@@ -7,7 +7,9 @@ Pillow>=10.0.0
 transformers>=4.40.0
 torch>=2.0.0
 torchvision>=0.15.0
-onnxruntime>=1.17.0
+# Windows + CUDA 12.x / cuDNN 9（与当前 torch cu128 环境匹配）
+# 不要同时安装 onnxruntime；CPU 包会覆盖 GPU 包的动态库。
+onnxruntime-gpu==1.23.2
 opencv-python-headless>=4.8.0
 rapid_table>=3.0.0
 
