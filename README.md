@@ -96,6 +96,10 @@ python launch_pp_structurev3.py
 - OCR 自动切换为 server 版（精度更高）
 - 安装与 CUDA 12.x / cuDNN 9 匹配的 ONNX Runtime GPU：
 
+当前统一环境为 PyTorch `2.8.0+cu129`、torchvision `0.23.0+cu129`、
+PaddlePaddle GPU `3.4.0` 和 cuDNN `9.10.2`。Windows 下 `server.py` 必须先导入
+PyTorch，再加载 Paddle；不要调整这两个框架的导入顺序。
+
 ```bash
 pip uninstall -y onnxruntime
 pip install "onnxruntime-gpu==1.23.2"

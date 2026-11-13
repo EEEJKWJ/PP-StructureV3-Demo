@@ -44,18 +44,20 @@ PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True uvicorn server:app --host 0.0.0.0 --p
 
 ### PaddlePaddle 版本问题（重要教训）
 
+- **当前环境**：`torch==2.8.0+cu129` + `torchvision==0.23.0+cu129` + `nvidia-cudnn-cu12==9.10.2.21`
 - **当前环境**：`paddlepaddle-gpu==3.4.0` (CUDA 12.9) + `paddleocr[doc-parser]==3.7.0` + `paddlex==3.7.2`
 - RTX 50 系（Blackwell）必须使用 Paddle 官方 CUDA 12.9 索引，不要使用 PyPI 的旧版 GPU wheel
-- PyTorch cu128 与 Paddle cu129 的 CUDA/cuDNN DLL 无法在同一 Windows 进程中共存
+- PyTorch 和 Paddle 均使用 CUDA 12.9，并统一使用 cuDNN 9.10.2
+- Windows 下必须先在 `server.py` 导入 PyTorch，再加载 Paddle；不要调整导入顺序
 
-**当前方案**：PyTorch 版面检测运行在 FastAPI 主进程，PP-TableMagic V2 运行在独立
-Paddle GPU 子进程（`tablemagic_worker.py`），通过 JSON 行协议通信。
+**当前方案**：PyTorch 版面检测和 PP-TableMagic V2 同进程运行，已通过真实版面模型、
+TableMagic 完整产线和 GPU 张量运算验证。
 
 ### PP-TableMagic V2 初始化参数
 
 ```python
 TableRecognitionPipelineV2(
-    device="cpu",
+    device="gpu",
     use_layout_detection=False,       # 已有 PP-DocLayoutV3，关闭 V2 内置版面检测
     use_doc_orientation_classify=False, # 裁切后的表格区域不需要
     use_doc_unwarping=False,           # 裁切后的表格区域不需要

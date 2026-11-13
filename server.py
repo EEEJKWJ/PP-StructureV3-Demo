@@ -12,11 +12,7 @@ import re
 import time
 import uuid
 import shutil
-import json
-import os
 import logging
-import subprocess
-import sys
 import threading
 from pathlib import Path
 
@@ -320,94 +316,24 @@ _table_engine_type = ""  # "paddle" | "rapid" | ""
 _table_engine_lock = threading.Lock()
 
 
-class _PaddleTableWorker:
-    """Paddle-only subprocess adapter for PP-TableMagic V2."""
-
-    def __init__(self):
-        self._process = None
-        self._lock = threading.Lock()
-        self._request_id = 0
-        self._ready = False
-
-    def start(self):
-        if self._ready:
-            return
-
-        worker_path = Path(__file__).with_name("tablemagic_worker.py")
-        env = os.environ.copy()
-        env.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
-        env.setdefault("PADDLE_PDX_MODEL_SOURCE", "bos")
-        self._process = subprocess.Popen(
-            [sys.executable, str(worker_path)],
-            cwd=str(Path(__file__).resolve().parent),
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            text=True,
-            encoding="utf-8",
-            bufsize=1,
-            env=env,
-        )
-
-        while True:
-            line = self._process.stdout.readline()
-            if not line:
-                self.close()
-                raise RuntimeError("PP-TableMagic 子进程启动失败")
-            if line.startswith("READY:"):
-                self._ready = True
-                return
-            if line.startswith("INIT_ERROR:"):
-                payload = json.loads(line[len("INIT_ERROR:"):])
-                self.close()
-                raise RuntimeError(payload.get("error", "初始化失败"))
-
-    def infer(self, image_path: str, table_bbox: list) -> dict:
-        with self._lock:
-            self.start()
-            self._request_id += 1
-            request_id = self._request_id
-            request = {
-                "id": request_id,
-                "image_path": str(Path(image_path).resolve()),
-                "bbox": table_bbox,
-            }
-            self._process.stdin.write(json.dumps(request) + "\n")
-            self._process.stdin.flush()
-
-            while True:
-                line = self._process.stdout.readline()
-                if not line:
-                    raise RuntimeError("PP-TableMagic 子进程已退出")
-                if line.startswith("RESULT:"):
-                    payload = json.loads(line[len("RESULT:"):])
-                    if payload.get("id") == request_id:
-                        return payload["result"]
-                elif line.startswith("ERROR:"):
-                    payload = json.loads(line[len("ERROR:"):])
-                    if payload.get("id") == request_id:
-                        raise RuntimeError(payload.get("error", "推理失败"))
-
-    def close(self):
-        if self._process is not None:
-            self._process.terminate()
-            self._process = None
-            self._ready = False
-
-
 def _get_table_engine():
     global _table_engine, _table_engine_type
     with _table_engine_lock:
         if _table_engine is not None:
             return _table_engine
 
-        # PyTorch 和 Paddle GPU 的 CUDA DLL 在 Windows 同一进程中会冲突，
-        # 因此 TableMagic V2 始终运行在独立的 Paddle 子进程中。
+        # Windows DLL 加载顺序约束：server.py 必须先导入 PyTorch，再导入
+        # Paddle。两端统一使用 CUDA 12.9/cuDNN 9.10 后可在同一进程运行。
         try:
-            worker = _PaddleTableWorker()
-            worker.start()
-            _table_engine = worker
+            from paddleocr import TableRecognitionPipelineV2
+            _table_engine = TableRecognitionPipelineV2(
+                device="gpu",
+                use_layout_detection=False,
+                use_doc_orientation_classify=False,
+                use_doc_unwarping=False,
+            )
             _table_engine_type = "paddle"
-            log.info("表格识别引擎: PP-TableMagic V2 (gpu 子进程) — "
+            log.info("表格识别引擎: PP-TableMagic V2 (gpu) — "
                      "表格分类+单元格检测+结构识别+OCR")
             return _table_engine
         except Exception as e:
@@ -439,20 +365,48 @@ def recognize_table_structure(image_path: str, table_bbox: list) -> dict | None:
 
 
 def _recognize_table_paddle(engine, image_path: str, table_bbox: list) -> dict | None:
-    """用隔离的 PP-TableMagic V2 GPU 完整产线识别表格。
+    """用 PP-TableMagic V2 GPU 完整产线识别表格。
 
     V2 产线内置：表格分类（有线/无线）→ 单元格检测 (RT-DETR-L)
     → 结构识别 (SLANeXt) → 文字检测+识别 (PP-OCRv4)。
     用 pred_html 获取行列结构，用 cell_box_list 获取坐标，
     用 table_ocr_pred 的 rec_texts/rec_boxes 恢复单元格内换行。
     """
+    import cv2
+    img = cv2.imread(image_path)
+    if img is None:
+        return None
+
+    x1, y1, x2, y2 = map(int, table_bbox)
+    pad = 5
+    cx1 = max(0, x1 - pad)
+    cy1 = max(0, y1 - pad)
+    cx2 = min(img.shape[1], x2 + pad)
+    cy2 = min(img.shape[0], y2 + pad)
+    crop = img[cy1:cy2, cx1:cx2]
+    if crop.size == 0:
+        return None
+
     try:
-        result = engine.infer(image_path, table_bbox)
-        pred_html = result.get("pred_html", "")
-        cell_boxes = result.get("cell_box_list", [])
-        ocr_texts = result.get("ocr_texts", [])
-        ocr_boxes = result.get("ocr_boxes", [])
-        cx1, cy1 = result.get("offset", [0, 0])
+        results = list(engine.predict(crop))
+        if not results:
+            return None
+
+        res = results[0]
+        data = res.json if hasattr(res, "json") else {}
+        inner = data.get("res", data) if isinstance(data, dict) else {}
+        table_res_list = inner.get("table_res_list", [])
+
+        pred_html = ""
+        cell_boxes = []
+        ocr_data = {}
+        if table_res_list:
+            pred_html = table_res_list[0].get("pred_html", "")
+            cell_boxes = table_res_list[0].get("cell_box_list", [])
+            ocr_data = table_res_list[0].get("table_ocr_pred", {})
+
+        if not pred_html and hasattr(res, "html") and isinstance(res.html, dict):
+            pred_html = next(iter(res.html.values()), "")
 
         if not pred_html:
             log.info("PP-TableMagic V2: 未检测到表格")
@@ -468,6 +422,8 @@ def _recognize_table_paddle(engine, image_path: str, table_bbox: list) -> dict |
             bboxes_batch = [quads]
 
         cells = _parse_html_table(pred_html, bboxes_batch, cx1, cy1)
+        ocr_texts = ocr_data.get("rec_texts", []) if isinstance(ocr_data, dict) else []
+        ocr_boxes = ocr_data.get("rec_boxes", []) if isinstance(ocr_data, dict) else []
 
         # ── 第2步：用 OCR 逐行���字 + 坐标恢复单元格内换行 ──
         if cell_boxes and ocr_texts and ocr_boxes:
@@ -804,12 +760,6 @@ async def startup_event():
     threading.Thread(target=_load_model, daemon=True).start()
     threading.Thread(target=_download_ocr_models, daemon=True).start()
     threading.Thread(target=_get_table_engine, daemon=True).start()
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    if isinstance(_table_engine, _PaddleTableWorker):
-        _table_engine.close()
 
 
 @app.get("/api/model-status")

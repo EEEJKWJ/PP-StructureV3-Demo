@@ -1,20 +1,23 @@
 # 核心依赖
+--extra-index-url https://download.pytorch.org/whl/cu129
+--extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/
 fastapi>=0.100.0
 uvicorn[standard]>=0.23.0
 python-multipart
 pymupdf>=1.23.0
 Pillow>=10.0.0
 transformers>=4.40.0
-torch>=2.0.0
-torchvision>=0.15.0
-# Windows + CUDA 12.x / cuDNN 9（与当前 torch cu128 环境匹配）
+torch==2.8.0+cu129
+torchvision==0.23.0+cu129
+# PyTorch 2.8+cu129 使用 cuDNN 9.10.2；Paddle 3.4 的元数据默认固定 9.9.0。
+# 运行时已验证 9.10.2 兼容，安装后 pip check 会把这一项报告为版本冲突。
+nvidia-cudnn-cu12==9.10.2.21
 # 不要同时安装 onnxruntime；CPU 包会覆盖 GPU 包的动态库。
 onnxruntime-gpu==1.23.2
 opencv-python-headless>=4.8.0
 rapid_table>=3.0.0
 
 # Windows CUDA 12.9 构建；RTX 50 系必须使用官方索引中的 3.x GPU wheel
---extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/
 paddlepaddle-gpu==3.4.0
 paddleocr[doc-parser]==3.7.0
 pyarrow>=18.0.0

@@ -70,9 +70,6 @@ def main():
                 f"time={duration:.2f}s"
             )
 
-    if isinstance(engine, server._PaddleTableWorker):
-        engine.close()
-
     count = len(rows)
     print(
         f"summary: samples={count} detected={successes} "
