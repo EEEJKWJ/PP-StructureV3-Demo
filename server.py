@@ -18,11 +18,12 @@ from pathlib import Path
 
 import fitz  # PyMuPDF
 import torch
-import numpy as np
 from PIL import Image
 from transformers import RTDetrImageProcessor, AutoModelForObjectDetection
 from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import FileResponse, HTMLResponse
+
+from app.services.table import TableService
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("pp-struct")
@@ -314,283 +315,26 @@ def ocr_single_block(image_path: str, block: dict) -> list[dict]:
 _table_engine = None
 _table_engine_type = ""  # "paddle" | "rapid" | ""
 _table_engine_lock = threading.Lock()
+_table_service = TableService(log, _get_ocr)
 
 
 def _get_table_engine():
+    """兼容现有状态接口，表格引擎由 TableService 统一管理。"""
     global _table_engine, _table_engine_type
-    with _table_engine_lock:
-        if _table_engine is not None:
-            return _table_engine
-
-        # Windows DLL 加载顺序约束：server.py 必须先导入 PyTorch，再导入
-        # Paddle。两端统一使用 CUDA 12.9/cuDNN 9.10 后可在同一进程运行。
-        try:
-            from paddleocr import TableRecognitionPipelineV2
-            _table_engine = TableRecognitionPipelineV2(
-                device="gpu",
-                use_layout_detection=False,
-                use_doc_orientation_classify=False,
-                use_doc_unwarping=False,
-            )
-            _table_engine_type = "paddle"
-            log.info("表格识别引擎: PP-TableMagic V2 (gpu) — "
-                     "表格分类+单元格检测+结构识别+OCR")
-            return _table_engine
-        except Exception as e:
-            log.warning(f"PP-TableMagic V2 初始化失败: {e}，尝试 RapidTable")
-
-        # 降级为 RapidTable（ONNX）
-        try:
-            from rapid_table import ModelType, RapidTable, RapidTableInput
-            input_args = RapidTableInput(model_type=ModelType.SLANETPLUS)
-            _table_engine = RapidTable(input_args)
-            _table_engine_type = "rapid"
-            log.info("表格识别引擎: RapidTable (SLANet_plus ONNX)")
-        except Exception as e:
-            log.error(f"表格识别引擎加载失败: {e}")
-
-        return _table_engine
+    _table_engine = _table_service.get_engine()
+    _table_engine_type = _table_service.engine_type
+    return _table_engine
 
 
 def recognize_table_structure(image_path: str, table_bbox: list) -> dict | None:
-    """对扫描件中的表格区域做结构识别。返回 {"cells": [...]} 或 None。"""
-    engine = _get_table_engine()
-    if engine is None:
-        return None
-
-    if _table_engine_type == "paddle":
-        return _recognize_table_paddle(engine, image_path, table_bbox)
-    else:
-        return _recognize_table_rapid(engine, image_path, table_bbox)
+    """识别表格并返回单元格和 HTML。"""
+    return _table_service.recognize(image_path, table_bbox)
 
 
-def _recognize_table_paddle(engine, image_path: str, table_bbox: list) -> dict | None:
-    """用 PP-TableMagic V2 GPU 完整产线识别表格。
-
-    V2 产线内置：表格分类（有线/无线）→ 单元格检测 (RT-DETR-L)
-    → 结构识别 (SLANeXt) → 文字检测+识别 (PP-OCRv4)。
-    用 pred_html 获取行列结构，用 cell_box_list 获取坐标，
-    用 table_ocr_pred 的 rec_texts/rec_boxes 恢复单元格内换行。
-    """
-    import cv2
-    img = cv2.imread(image_path)
-    if img is None:
-        return None
-
-    x1, y1, x2, y2 = map(int, table_bbox)
-    pad = 5
-    cx1 = max(0, x1 - pad)
-    cy1 = max(0, y1 - pad)
-    cx2 = min(img.shape[1], x2 + pad)
-    cy2 = min(img.shape[0], y2 + pad)
-    crop = img[cy1:cy2, cx1:cx2]
-    if crop.size == 0:
-        return None
-
-    try:
-        results = list(engine.predict(crop))
-        if not results:
-            return None
-
-        res = results[0]
-        data = res.json if hasattr(res, "json") else {}
-        inner = data.get("res", data) if isinstance(data, dict) else {}
-        table_res_list = inner.get("table_res_list", [])
-
-        pred_html = ""
-        cell_boxes = []
-        ocr_data = {}
-        if table_res_list:
-            pred_html = table_res_list[0].get("pred_html", "")
-            cell_boxes = table_res_list[0].get("cell_box_list", [])
-            ocr_data = table_res_list[0].get("table_ocr_pred", {})
-
-        if not pred_html and hasattr(res, "html") and isinstance(res.html, dict):
-            pred_html = next(iter(res.html.values()), "")
-
-        if not pred_html:
-            log.info("PP-TableMagic V2: 未检测到表格")
-            return None
-
-        # ── 第1步：用 pred_html 解析行列结构，用 cell_box_list 提供 bbox ──
-        bboxes_batch = None
-        if cell_boxes:
-            quads = []
-            for cb in cell_boxes:
-                x1b, y1b, x2b, y2b = cb[0], cb[1], cb[2], cb[3]
-                quads.append([x1b, y1b, x2b, y1b, x2b, y2b, x1b, y2b])
-            bboxes_batch = [quads]
-
-        cells = _parse_html_table(pred_html, bboxes_batch, cx1, cy1)
-        ocr_texts = ocr_data.get("rec_texts", []) if isinstance(ocr_data, dict) else []
-        ocr_boxes = ocr_data.get("rec_boxes", []) if isinstance(ocr_data, dict) else []
-
-        # ── 第2步：用 OCR 逐行���字 + 坐标恢复单元格内换行 ──
-        if cell_boxes and ocr_texts and ocr_boxes:
-            # 把每条 OCR 文字按中心点分配到最近的单元格
-            # 格式: {cell_idx: [(y_center, text), ...]}
-            text_by_cell = {}
-            for t_idx, txt in enumerate(ocr_texts):
-                if t_idx >= len(ocr_boxes):
-                    break
-                tb = ocr_boxes[t_idx]  # [x1, y1, x2, y2]
-                tcx = (tb[0] + tb[2]) / 2
-                tcy = (tb[1] + tb[3]) / 2
-                # 找包含���文字中心点的单元格
-                best_cell = -1
-                for ci, cb in enumerate(cell_boxes):
-                    if cb[0] <= tcx <= cb[2] and cb[1] <= tcy <= cb[3]:
-                        best_cell = ci
-                        break
-                if best_cell == -1:
-                    # 中心点不在任何单元格内，找最近的
-                    min_dist = float('inf')
-                    for ci, cb in enumerate(cell_boxes):
-                        ccx = (cb[0] + cb[2]) / 2
-                        ccy = (cb[1] + cb[3]) / 2
-                        dist = (tcx - ccx) ** 2 + (tcy - ccy) ** 2
-                        if dist < min_dist:
-                            min_dist = dist
-                            best_cell = ci
-                if best_cell >= 0:
-                    text_by_cell.setdefault(best_cell, []).append((tcy, txt))
-
-            # 用按 Y 排序的 OCR 文字替换 HTML 解析出的文字（恢复换行）
-            for ci, lines in text_by_cell.items():
-                if ci < len(cells):
-                    lines.sort(key=lambda x: x[0])  # 按 Y 坐标从上到下
-                    cells[ci]["text"] = "\n".join(t for _, t in lines)
-
-        log.info(f"PP-TableMagic V2 表格识别完成: {len(cells)} 个单元格")
-        return {"cells": cells} if cells else None
-
-    except Exception as e:
-        log.error(f"PP-TableMagic V2 表格识别失败: {e}")
-        return None
-
-
-def _recognize_table_rapid(engine, image_path: str, table_bbox: list) -> dict | None:
-    """用 RapidTable (ONNX) 识别表格"""
-    import cv2
-    img = cv2.imread(image_path)
-    if img is None:
-        return None
-
-    x1, y1, x2, y2 = table_bbox
-    pad = 5
-    cx1 = max(0, x1 - pad)
-    cy1 = max(0, y1 - pad)
-    cx2 = min(img.shape[1], x2 + pad)
-    cy2 = min(img.shape[0], y2 + pad)
-    crop = img[cy1:cy2, cx1:cx2]
-    if crop.size == 0:
-        return None
-
-    # 用 PP-OCRv5 做文字识别
-    ocr = _get_ocr()
-    ocr_results = None
-    if ocr:
-        ocr.run(crop)
-        if ocr.results:
-            boxes = np.array([r["rec_pos"] for r in ocr.results])
-            txts = tuple(r["text"] for r in ocr.results)
-            scores = tuple(0.9 for _ in ocr.results)
-            ocr_results = [(boxes, txts, scores)]
-
-    try:
-        result = engine(crop, ocr_results=ocr_results)
-        html = result.pred_htmls[0] if result.pred_htmls else ""
-        if not html:
-            return None
-
-        cells = _parse_html_table(html, result.cell_bboxes, cx1, cy1)
-        log.info(f"RapidTable 表格识别完成: {len(cells)} 个单元格")
-        return {"cells": cells}
-    except Exception as e:
-        log.error(f"RapidTable 表格识别失败: {e}")
-        return None
-
-
-def _parse_html_table(html: str, cell_bboxes_batch, offset_x: int, offset_y: int) -> list[dict]:
-    """将 RapidTable 的 HTML 表格解析为 [{row, col, text, bbox}] 格式"""
-    from html.parser import HTMLParser
-
-    class TableParser(HTMLParser):
-        def __init__(self):
-            super().__init__()
-            self.cells = []
-            self.row = -1
-            self.col = 0
-            self.in_td = False
-            self.current_text = ""
-            self.col_spans = {}  # row -> set of occupied cols
-
-        def handle_starttag(self, tag, attrs):
-            if tag == "tr":
-                self.row += 1
-                self.col = 0
-                # 跳过被 rowspan 占用的列
-                while (self.row, self.col) in self.col_spans:
-                    self.col += 1
-            elif tag == "td":
-                self.in_td = True
-                self.current_text = ""
-                # 跳过被 rowspan 占用的列
-                while (self.row, self.col) in self.col_spans:
-                    self.col += 1
-                # 处理 colspan/rowspan
-                colspan = 1
-                rowspan = 1
-                for k, v in attrs:
-                    if k == "colspan":
-                        colspan = int(v)
-                    elif k == "rowspan":
-                        rowspan = int(v)
-                self._colspan = colspan
-                self._rowspan = rowspan
-
-        def handle_data(self, data):
-            if self.in_td:
-                self.current_text += data
-
-        def handle_endtag(self, tag):
-            if tag == "td" and self.in_td:
-                self.in_td = False
-                self.cells.append({
-                    "row": self.row,
-                    "col": self.col,
-                    "text": self.current_text.strip(),
-                })
-                # 标记 rowspan 占用的位置
-                for dr in range(self._rowspan):
-                    for dc in range(self._colspan):
-                        if dr > 0 or dc > 0:
-                            self.col_spans[(self.row + dr, self.col + dc)] = True
-                self.col += self._colspan
-
-    parser = TableParser()
-    parser.feed(html)
-
-    # 分配 bbox：先转为全局坐标，再按空间位置匹配
-    bboxes = []
-    if cell_bboxes_batch and len(cell_bboxes_batch) > 0:
-        bboxes = []
-        for cb in cell_bboxes_batch[0]:
-            # cb 是 8 值四边形 [x1,y1,x2,y2,x3,y3,x4,y4]，取外接矩形
-            xs = [float(cb[i]) for i in range(0, len(cb), 2)]
-            ys = [float(cb[i]) for i in range(1, len(cb), 2)]
-            bboxes.append([
-                int(min(xs)) + offset_x, int(min(ys)) + offset_y,
-                int(max(xs)) + offset_x, int(max(ys)) + offset_y,
-            ])
-
-    for i, cell in enumerate(parser.cells):
-        if i < len(bboxes):
-            cell["bbox"] = bboxes[i]
-        else:
-            cell["bbox"] = [0, 0, 0, 0]
-
-    return parser.cells
+def _apply_table_result(block, cells, table_html=""):
+    """统一写入表格单元格和 HTML，保持所有识别路径字段一致。"""
+    block["cells"] = cells
+    block["table_html"] = table_html or _table_service.cells_to_html(cells)
 
 
 # ── 目录行解析 ────────────────────────────────────────────────────
@@ -1026,7 +770,14 @@ def build_structured(blocks: list, pdf_path: str | None, page_num: int,
                     row_data[headers[c]] = _split_value(val)
                 rows.append(row_data)
 
-            content.append({"type": "table", "headers": headers, "rows": rows})
+            table_html = block.get("table_html") or _table_service.cells_to_html(cells)
+            block["table_html"] = table_html
+            content.append({
+                "type": "table",
+                "headers": headers,
+                "rows": rows,
+                "html": table_html,
+            })
 
         # 表格（扫描件，无结构识别）
         elif label == "table" and block.get("cells") is None:
@@ -1274,6 +1025,7 @@ def merge_cross_page_tables(pages_result: list[dict]) -> list[dict]:
                         if item["type"] == "table":
                             page_data["structured"]["content"][idx] = {
                                 "type": "table", "headers": headers, "rows": rows,
+                                "html": _table_service.cells_to_html(cells),
                                 "merged_from_pages": block["merged_from_pages"],
                             }
                             break
@@ -1389,15 +1141,23 @@ async def detect(doc_id: str, page_num: int):
                     log.info(f"表格单元格乱码 ({garbage_cells}/{len(cells)})，回退 PP-TableMagic V2")
                     table_result = recognize_table_structure(str(img_path), block["bbox"])
                     if table_result and table_result["cells"]:
-                        block["cells"] = table_result["cells"]
+                        _apply_table_result(
+                            block,
+                            table_result["cells"],
+                            table_result.get("html", ""),
+                        )
                     else:
-                        block["cells"] = cells
+                        _apply_table_result(block, cells)
                 else:
-                    block["cells"] = cells
+                    _apply_table_result(block, cells)
             else:
                 table_result = recognize_table_structure(str(img_path), block["bbox"])
                 if table_result and table_result["cells"]:
-                    block["cells"] = table_result["cells"]
+                    _apply_table_result(
+                        block,
+                        table_result["cells"],
+                        table_result.get("html", ""),
+                    )
                 else:
                     block["cells"] = None
 
@@ -1482,15 +1242,23 @@ async def detect_all(doc_id: str):
                         log.info(f"[detect_all] 表格单元格乱码，回退 PP-TableMagic V2")
                         table_result = recognize_table_structure(str(img_path), block["bbox"])
                         if table_result and table_result["cells"]:
-                            block["cells"] = table_result["cells"]
+                            _apply_table_result(
+                                block,
+                                table_result["cells"],
+                                table_result.get("html", ""),
+                            )
                         else:
-                            block["cells"] = cells
+                            _apply_table_result(block, cells)
                     else:
-                        block["cells"] = cells
+                        _apply_table_result(block, cells)
                 else:
                     table_result = recognize_table_structure(str(img_path), block["bbox"])
                     if table_result and table_result["cells"]:
-                        block["cells"] = table_result["cells"]
+                        _apply_table_result(
+                            block,
+                            table_result["cells"],
+                            table_result.get("html", ""),
+                        )
                     else:
                         block["cells"] = None
 

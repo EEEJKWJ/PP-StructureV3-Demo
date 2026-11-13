@@ -46,8 +46,8 @@
 | POST | `/api/detect-all/{doc_id}` | 识别全部页面 |
 | DELETE | `/api/documents/{doc_id}` | 删除上传文档 |
 
-当前表格输出字段为 `cells`，结构化结果为 `headers` 和 `rows`。原始
-`pred_html` 已在底层生成，但尚未通过 API 返回；这属于后续阶段 1 的改动。
+阶段 1A 起，表格 block 同时返回 `cells` 和 `table_html`；结构化 table 项包含
+`headers`、`rows` 和 `html`。原始 `cells`、`headers`、`rows` 字段保持兼容。
 
 ## 4. 基线检查命令
 

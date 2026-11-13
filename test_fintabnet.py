@@ -30,6 +30,7 @@ def main():
         raise RuntimeError(f"TableMagic unavailable: {server._table_engine_type}")
 
     successes = 0
+    html_successes = 0
     total_cells = 0
     elapsed = 0.0
     with tempfile.TemporaryDirectory(
@@ -61,12 +62,15 @@ def main():
             duration = time.perf_counter() - started
             elapsed += duration
             cell_count = len(result["cells"]) if result else 0
+            has_html = int(bool(result and result.get("html")))
             total_cells += cell_count
             successes += int(cell_count > 0)
+            html_successes += has_html
             print(
                 f"{index:02d} {row['file_name']}: "
                 f"size={row['width']}x{row['height']} "
                 f"tables={int(cell_count > 0)} cells={cell_count} "
+                f"html={has_html} "
                 f"time={duration:.2f}s"
             )
 
@@ -74,6 +78,7 @@ def main():
     print(
         f"summary: samples={count} detected={successes} "
         f"detection_rate={successes / count if count else 0:.2%} "
+        f"html={html_successes} "
         f"avg_cells={total_cells / count if count else 0:.2f} "
         f"avg_time={elapsed / count if count else 0:.2f}s"
     )

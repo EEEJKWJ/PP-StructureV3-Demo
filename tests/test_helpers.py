@@ -1,6 +1,7 @@
 import unittest
 
 import server
+from app.services.table import TableService
 
 
 class TableParserTests(unittest.TestCase):
@@ -18,7 +19,7 @@ class TableParserTests(unittest.TestCase):
             [10, 5, 20, 5, 20, 10, 10, 10],
         ]]
 
-        cells = server._parse_html_table(html, cell_boxes, 100, 200)
+        cells = TableService.parse_html_table(html, cell_boxes, 100, 200)
 
         self.assertEqual([(c["row"], c["col"], c["text"]) for c in cells], [
             (0, 0, "名称"),
@@ -41,6 +42,18 @@ class TableParserTests(unittest.TestCase):
 
         self.assertEqual(grid, [["A", "B"], ["1", "2"]])
         self.assertEqual((max_row, max_col), (1, 1))
+
+    def test_cells_to_html_escapes_text(self):
+        cells = [
+            {"row": 0, "col": 0, "text": "<名称>", "bbox": [0, 0, 1, 1]},
+            {"row": 0, "col": 1, "text": "A&B", "bbox": [1, 0, 2, 1]},
+        ]
+
+        table_html = TableService.cells_to_html(cells)
+
+        self.assertIn("&lt;名称&gt;", table_html)
+        self.assertIn("A&amp;B", table_html)
+        self.assertTrue(table_html.startswith("<table>"))
 
 
 class TextAndTocTests(unittest.TestCase):
@@ -70,6 +83,18 @@ class TextAndTocTests(unittest.TestCase):
 
 
 class StructureTests(unittest.TestCase):
+    def test_apply_table_result_adds_html(self):
+        block = {}
+        cells = [
+            {"row": 0, "col": 0, "text": "名称", "bbox": [10, 10, 50, 30]},
+            {"row": 0, "col": 1, "text": "数量", "bbox": [50, 10, 90, 30]},
+        ]
+
+        server._apply_table_result(block, cells)
+
+        self.assertEqual(block["cells"], cells)
+        self.assertIn("<td>名称</td>", block["table_html"])
+
     def test_build_structured_keeps_current_table_shape(self):
         block = {
             "label": "table",
@@ -87,6 +112,7 @@ class StructureTests(unittest.TestCase):
         self.assertEqual(structured["content"][0]["type"], "table")
         self.assertEqual(structured["content"][0]["headers"], ["名称", "数量"])
         self.assertEqual(structured["content"][0]["rows"], [{"名称": "苹果", "数量": "2"}])
+        self.assertIn("<td>苹果</td>", structured["content"][0]["html"])
 
 
 if __name__ == "__main__":
