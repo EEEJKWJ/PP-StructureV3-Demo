@@ -23,6 +23,7 @@ from transformers import RTDetrImageProcessor, AutoModelForObjectDetection
 from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import FileResponse, HTMLResponse
 
+from app.services.document import DocumentService
 from app.services.table import TableService
 
 logging.basicConfig(level=logging.INFO)
@@ -478,25 +479,13 @@ def is_garbage_text(text: str, threshold: float = 0.3) -> bool:
     return False
 
 
+_document_service = DocumentService(log, is_garbage_text)
+
+
 def page_has_text(pdf_path: str, page_num: int) -> bool:
-    doc = fitz.open(pdf_path)
-    page = doc[page_num - 1]
-    text = page.get_text("text").strip()
-    doc.close()
+    """兼容入口：页面文字层检测由 DocumentService 提供。"""
+    return _document_service.page_has_text(pdf_path, page_num)
 
-    if not text or len(text) < 5:
-        return False
-
-    printable = sum(1 for c in text if c.isprintable() or c in '\n\r\t')
-    ratio = printable / len(text) if text else 0
-    if ratio <= 0.5:
-        return False
-
-    if is_garbage_text(text):
-        log.info(f"第 {page_num} 页文字层检测为乱码，将回退 OCR")
-        return False
-
-    return True
 
 
 @app.on_event("startup")
@@ -529,27 +518,15 @@ async def model_status():
 
 # ── PDF 保存 + 按需渲染 ──────────────────────────────────────────────
 def pdf_save_and_count(pdf_bytes: bytes, doc_dir: Path) -> int:
-    """Save PDF and return page count without rendering any images."""
-    (doc_dir / "source.pdf").write_bytes(pdf_bytes)
-    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-    count = len(doc)
-    doc.close()
-    return count
+    """兼容入口：PDF 保存由 DocumentService 提供。"""
+    return _document_service.save_pdf(pdf_bytes, doc_dir)
+
 
 
 def ensure_page_image(doc_dir: Path, page_num: int) -> Path:
-    """Render a single page PNG on demand, return its path."""
-    img_path = doc_dir / f"page_{page_num:03d}.png"
-    if not img_path.exists():
-        pdf_path = doc_dir / "source.pdf"
-        if not pdf_path.exists():
-            raise FileNotFoundError(f"source.pdf not found in {doc_dir}")
-        doc = fitz.open(str(pdf_path))
-        page = doc[page_num - 1]
-        pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
-        pix.save(str(img_path))
-        doc.close()
-    return img_path
+    """兼容入口：页面渲染由 DocumentService 提供。"""
+    return _document_service.ensure_page_image(doc_dir, page_num)
+
 
 
 def _sort_reading_order(blocks: list[dict], y_tolerance: int = 30) -> list[dict]:
@@ -646,57 +623,18 @@ def _iou(a, b):
 # ── 表格单元格提取（PyMuPDF）──────────────────────────────────────
 def extract_table_cells(pdf_path: str, page_num: int, table_bbox: list,
                         img_width: int, img_height: int) -> list[dict]:
-    doc = fitz.open(pdf_path)
-    page = doc[page_num - 1]
-
-    scale = 2.0
-    pad = 10
-    page_rect = page.rect
-    pdf_rect = fitz.Rect(
-        max(0, table_bbox[0] / scale - pad),
-        max(0, table_bbox[1] / scale - pad),
-        min(page_rect.width, table_bbox[2] / scale + pad),
-        min(page_rect.height, table_bbox[3] / scale + pad),
+    """兼容入口：PDF 表格单元格提取由 DocumentService 提供。"""
+    return _document_service.extract_table_cells(
+        pdf_path, page_num, table_bbox, img_width, img_height
     )
 
-    tables = page.find_tables(clip=pdf_rect)
-    cells = []
-    for table in tables:
-        rows_text = table.extract()
-        for row_idx, row in enumerate(table.rows):
-            for col_idx, cell_rect in enumerate(row.cells):
-                if cell_rect is None:
-                    continue
-                text = ""
-                if row_idx < len(rows_text) and col_idx < len(rows_text[row_idx]):
-                    text = rows_text[row_idx][col_idx] or ""
-                cells.append({
-                    "bbox": [
-                        round(cell_rect[0] * scale),
-                        round(cell_rect[1] * scale),
-                        round(cell_rect[2] * scale),
-                        round(cell_rect[3] * scale),
-                    ],
-                    "row": row_idx,
-                    "col": col_idx,
-                    "text": text,
-                })
-    doc.close()
-
-    log.info(f"提取到 {len(cells)} 个单元格")
-    return cells
 
 
 # ── 文本提取（PDF 文字层）────────────────────────────────────────
 def extract_text_from_pdf(pdf_path: str, page_num: int, bbox: list) -> str:
-    doc = fitz.open(pdf_path)
-    page = doc[page_num - 1]
-    scale = 2.0
-    rect = fitz.Rect(bbox[0] / scale, bbox[1] / scale,
-                     bbox[2] / scale, bbox[3] / scale)
-    text = page.get_text("text", clip=rect).strip()
-    doc.close()
-    return text
+    """兼容入口：PDF 文字层提取由 DocumentService 提供。"""
+    return _document_service.extract_text_from_pdf(pdf_path, page_num, bbox)
+
 
 
 # ── 结构化输出 ────────────────────────────────────────────────────

@@ -1,6 +1,11 @@
+import logging
+import tempfile
 import unittest
+from pathlib import Path
 
+import fitz
 import server
+from app.services.document import DocumentService
 from app.services.table import TableService
 
 
@@ -113,6 +118,38 @@ class StructureTests(unittest.TestCase):
         self.assertEqual(structured["content"][0]["headers"], ["名称", "数量"])
         self.assertEqual(structured["content"][0]["rows"], [{"名称": "苹果", "数量": "2"}])
         self.assertIn("<td>苹果</td>", structured["content"][0]["html"])
+
+
+class DocumentServiceTests(unittest.TestCase):
+    def test_save_render_and_extract_text(self):
+        service = DocumentService(
+            logging.getLogger("test-document"),
+            garbage_detector=lambda text: False,
+        )
+        document = fitz.open()
+        page = document.new_page(width=200, height=200)
+        page.insert_text((20, 40), "Hello table")
+        pdf_bytes = document.tobytes()
+        document.close()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            doc_dir = Path(temp_dir)
+            page_count = service.save_pdf(pdf_bytes, doc_dir)
+            image_path = service.ensure_page_image(doc_dir, 1)
+            text = service.extract_text_from_pdf(
+                str(doc_dir / "source.pdf"),
+                1,
+                [0, 0, 400, 400],
+            )
+            has_text = service.page_has_text(
+                str(doc_dir / "source.pdf"),
+                1,
+            )
+
+        self.assertEqual(page_count, 1)
+        self.assertTrue(image_path.name == "page_001.png")
+        self.assertIn("Hello table", text)
+        self.assertTrue(has_text)
 
 
 if __name__ == "__main__":

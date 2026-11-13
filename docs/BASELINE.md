@@ -8,6 +8,8 @@
 - 当前运行模式：FastAPI 单进程应用
 - PyTorch 与 Paddle 在同一进程运行，Windows 下必须先导入 PyTorch
 - 表格识别使用 PP-TableMagic V2 GPU 完整产线
+- 表格识别位于 `app/services/table.py`
+- 文档与 PDF 操作位于 `app/services/document.py`
 
 ## 2. 运行环境
 
