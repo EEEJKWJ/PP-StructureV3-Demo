@@ -109,6 +109,19 @@ pip install "onnxruntime-gpu==1.23.2"
 `onnxruntime-gpu` 后运行 `pip check` 可能报告“onnxruntime is not installed”。
 这是同模块不同发行包的元数据限制，不影响 GPU 版导入和推理；不要为此重新安装 CPU 包。
 
+### FinTabNet Parquet 冒烟测试
+
+可直接读取 HuggingFace Parquet 格式的 FinTabNet 分片，并按文件中的 Table
+类别框裁剪后调用 PP-TableMagic V2：
+
+```bash
+python test_fintabnet.py --limit 10
+```
+
+默认文件是
+`D:\dataset\fintabnet-pubtables-full\test\test-00000-of-00006.parquet`，也可通过
+`--parquet` 指定其他分片。
+
 ## 结构化输出示例
 
 ```json

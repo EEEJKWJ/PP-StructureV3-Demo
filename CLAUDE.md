@@ -44,16 +44,12 @@ PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True uvicorn server:app --host 0.0.0.0 --p
 
 ### PaddlePaddle 版本问题（重要教训）
 
-- **paddlepaddle-gpu 3.x 尚未公开发布**（截至 2026-04），只有 CPU 版 `paddlepaddle 3.x`
-- **paddlepaddle-gpu 2.6.2** 与 **paddlex 3.4.x** 不兼容：
-  - Python 层：`AnalysisConfig.set_optimization_level` 不存在（3.x 新增 API）
-  - C++ 层：即使 monkey-patch Python 层，推理时 segfault
-- **paddlepaddle (CPU) 3.0.0** 可以正常运行 paddlex 3.4.3 / paddleocr 3.4.0
-- **paddlepaddle (CPU) 3.3.1** 有 oneDNN + PIR 的 bug（`ConvertPirAttribute2RuntimeAttribute` NotImplementedError），3.0.0 没有此问题
+- **当前环境**：`paddlepaddle-gpu==3.4.0` (CUDA 12.9) + `paddleocr[doc-parser]==3.7.0` + `paddlex==3.7.2`
+- RTX 50 系（Blackwell）必须使用 Paddle 官方 CUDA 12.9 索引，不要使用 PyPI 的旧版 GPU wheel
+- PyTorch cu128 与 Paddle cu129 的 CUDA/cuDNN DLL 无法在同一 Windows 进程中共存
 
-**当前方案**：`paddlepaddle==3.0.0` (CPU) + `paddleocr==3.4.0` + `paddlex[ocr]==3.4.3`
-- 版面检测（PyTorch）和 OCR（ONNX）仍走 GPU (RTX 4090)
-- 仅表格结构识别走 Paddle CPU 推理
+**当前方案**：PyTorch 版面检测运行在 FastAPI 主进程，PP-TableMagic V2 运行在独立
+Paddle GPU 子进程（`tablemagic_worker.py`），通过 JSON 行协议通信。
 
 ### PP-TableMagic V2 初始化参数
 

@@ -13,8 +13,8 @@ onnxruntime-gpu==1.23.2
 opencv-python-headless>=4.8.0
 rapid_table>=3.0.0
 
-# 可选：GPU 加速（有 NVIDIA GPU 时安装）
-# pip install onnxruntime-gpu  # 替代 onnxruntime
-
-# 可选：PaddlePaddle 完整产线（表格识别 v2，精度更高）
-# pip install paddlepaddle-gpu paddleocr
+# Windows CUDA 12.9 构建；RTX 50 系必须使用官方索引中的 3.x GPU wheel
+--extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/
+paddlepaddle-gpu==3.4.0
+paddleocr[doc-parser]==3.7.0
+pyarrow>=18.0.0
