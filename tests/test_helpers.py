@@ -39,6 +39,24 @@ class TableParserTests(unittest.TestCase):
         self.assertEqual(cells[0]["bbox"], [100, 200, 110, 205])
         self.assertEqual(cells[3]["bbox"], [110, 205, 120, 210])
 
+    def test_parse_html_table_preserves_row_and_col_spans(self):
+        html = (
+            "<table><tr><td rowspan='2' colspan='2'>A</td>"
+            "<td>B</td></tr><tr><td>C</td></tr></table>"
+        )
+        boxes = [[
+            [0, 0, 20, 0, 20, 20, 0, 20],
+            [20, 0, 30, 0, 30, 10, 20, 10],
+            [20, 10, 30, 10, 30, 20, 20, 20],
+        ]]
+
+        cells = TableService.parse_html_table(html, boxes, 0, 0)
+
+        self.assertEqual(cells[0]["rowspan"], 2)
+        self.assertEqual(cells[0]["colspan"], 2)
+        self.assertEqual((cells[1]["row"], cells[1]["col"]), (0, 2))
+        self.assertEqual((cells[2]["row"], cells[2]["col"]), (1, 2))
+
     def test_table_to_grid(self):
         cells = [
             {"row": 0, "col": 0, "text": "A"},

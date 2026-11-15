@@ -83,6 +83,38 @@ def word_tokens(text):
     )
 
 
+def structure_edges(cells):
+    """从单元格占用网格提取右邻和下邻结构边。"""
+    cells = list(cells or [])
+    coverage = {}
+    positions = {}
+    for index, cell in enumerate(cells):
+        row = int(cell.get("row", 0) or 0)
+        col = int(cell.get("col", 0) or 0)
+        rowspan = max(1, int(cell.get("rowspan", 1) or 1))
+        colspan = max(1, int(cell.get("colspan", 1) or 1))
+        for row_index in range(row, row + rowspan):
+            for col_index in range(col, col + colspan):
+                coverage[(row_index, col_index)] = index
+                positions.setdefault(index, []).append(
+                    (row_index, col_index)
+                )
+
+    edges = set()
+    canonical = {
+        index: min(cell_positions)
+        for index, cell_positions in positions.items()
+    }
+    for (row, col), cell_index in coverage.items():
+        right = coverage.get((row, col + 1))
+        below = coverage.get((row + 1, col))
+        if right is not None and right != cell_index:
+            edges.add((canonical[cell_index], canonical[right]))
+        if below is not None and below != cell_index:
+            edges.add((canonical[cell_index], canonical[below]))
+    return coverage, edges
+
+
 def grounded_cell_metrics(predictions, ground_truth):
     """计算一组预测与真值单元格的空间和文本指标。"""
     predictions = list(predictions or [])
@@ -156,12 +188,38 @@ def grounded_cell_metrics(predictions, ground_truth):
         if truth_words
         else None
     )
+    _, prediction_edges = structure_edges(predictions)
+    _, truth_edges = structure_edges(ground_truth)
+    edge_true_positive = len(prediction_edges & truth_edges)
+    if not prediction_edges and not truth_edges:
+        edge_precision = 1.0
+        edge_recall = 1.0
+    else:
+        edge_precision = (
+            edge_true_positive / len(prediction_edges)
+            if prediction_edges
+            else 0.0
+        )
+        edge_recall = (
+            edge_true_positive / len(truth_edges)
+            if truth_edges
+            else 0.0
+        )
+    edge_f1 = (
+        2 * edge_precision * edge_recall
+        / (edge_precision + edge_recall)
+        if edge_precision + edge_recall > 0
+        else 0.0
+    )
     return {
         "mean_best_iou": best_iou_sum / len(ground_truth),
         "match_rate_iou_0_5": len(spatial_matches) / len(ground_truth),
         "text_recall": exact_text_matches / len(ground_truth),
         "cer": cer,
         "wer": wer,
+        "structure_edge_precision": edge_precision,
+        "structure_edge_recall": edge_recall,
+        "structure_edge_f1": edge_f1,
     }
 
 
@@ -251,6 +309,15 @@ def compute_metrics(results, experiment=None):
     )
     cer = _mean_defined([item["cer"] for item in grounded_samples])
     wer = _mean_defined([item["wer"] for item in grounded_samples])
+    edge_precision = _mean_defined(
+        [item["structure_edge_precision"] for item in grounded_samples]
+    )
+    edge_recall = _mean_defined(
+        [item["structure_edge_recall"] for item in grounded_samples]
+    )
+    edge_f1 = _mean_defined(
+        [item["structure_edge_f1"] for item in grounded_samples]
+    )
 
     detection_rate = (
         len(detected_annotated) / len(annotated)
@@ -285,6 +352,9 @@ def compute_metrics(results, experiment=None):
         "cell_text_recall": _round_optional(text_recall),
         "cer": _round_optional(cer),
         "wer": _round_optional(wer),
+        "structure_edge_precision": _round_optional(edge_precision),
+        "structure_edge_recall": _round_optional(edge_recall),
+        "structure_edge_f1": _round_optional(edge_f1),
         "teds": None,
         "teds_s": None,
     }
@@ -321,6 +391,9 @@ def compute_metrics(results, experiment=None):
         "cell_text_recall": ground_truth_status,
         "cer": ground_truth_status,
         "wer": ground_truth_status,
+        "structure_edge_precision": ground_truth_status,
+        "structure_edge_recall": ground_truth_status,
+        "structure_edge_f1": ground_truth_status,
         "teds": structure_status,
         "teds_s": structure_status,
     }
@@ -364,6 +437,10 @@ def compute_metrics(results, experiment=None):
             "grounded_cell_metrics": (
                 "spatial matching at IoU >= 0.5; exact normalized "
                 "cell text recall; reading-order CER/WER"
+            ),
+            "structure_edges": (
+                "precision/recall/F1 over right and lower adjacency "
+                "edges in the occupied cell grid"
             ),
         },
     }

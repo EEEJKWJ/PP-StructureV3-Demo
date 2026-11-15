@@ -67,6 +67,41 @@ class MetricPrimitiveTests(unittest.TestCase):
         self.assertEqual(metrics["text_recall"], 1)
         self.assertEqual(metrics["cer"], 0)
         self.assertEqual(metrics["wer"], 0)
+        self.assertEqual(metrics["structure_edge_f1"], 1)
+
+    def test_structure_edges_penalize_oversegmentation(self):
+        ground_truth = [{
+            "row": 0,
+            "col": 0,
+            "rowspan": 1,
+            "colspan": 2,
+            "text": "A",
+            "bbox": [0, 0, 20, 10],
+        }]
+        prediction = [
+            {
+                "row": 0,
+                "col": 0,
+                "rowspan": 1,
+                "colspan": 1,
+                "text": "A",
+                "bbox": [0, 0, 10, 10],
+            },
+            {
+                "row": 0,
+                "col": 1,
+                "rowspan": 1,
+                "colspan": 1,
+                "text": "B",
+                "bbox": [10, 0, 20, 10],
+            },
+        ]
+
+        metrics = grounded_cell_metrics(prediction, ground_truth)
+
+        self.assertLess(metrics["structure_edge_precision"], 1)
+        self.assertLess(metrics["structure_edge_recall"], 1)
+        self.assertLess(metrics["structure_edge_f1"], 1)
 
     def test_partial_grounded_metrics_keep_zero_and_error_values(self):
         predictions = [

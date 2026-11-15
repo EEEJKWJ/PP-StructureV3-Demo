@@ -65,6 +65,17 @@ class FakeDataset(TableDataset):
                 image_id=index,
                 ocr_word_count=2,
                 ocr_box_count=2,
+                ground_truth={
+                    "status": "available",
+                    "cells": [{
+                        "row": 0,
+                        "col": 0,
+                        "rowspan": 1,
+                        "colspan": 1,
+                        "text": "A",
+                        "bbox": [0, 0, 1, 1],
+                    }],
+                },
             )
             for index in range(count)
         ]

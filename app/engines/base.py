@@ -153,6 +153,8 @@ def parse_html_table(table_html, cell_boxes_batch, offset_x, offset_y):
                 "row": self.row,
                 "col": self.col,
                 "text": self.current_text.strip(),
+                "rowspan": self.rowspan,
+                "colspan": self.colspan,
             })
             for row_delta in range(self.rowspan):
                 for col_delta in range(self.colspan):

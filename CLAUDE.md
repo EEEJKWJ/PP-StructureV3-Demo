@@ -39,6 +39,8 @@ PDF 上传
 - `app/engines/tablemagic.py` — PP-TableMagic V2 适配器
 - `app/engines/rapid_table.py` — RapidTable 适配器
 - `app/datasets/fintabnet.py` — FinTabNet Parquet 分片与样本
+- `app/datasets/preprocessing.py` — FinTabNet.c XML 到 cells/HTML
+- `app/datasets/fintabnet_c_structure.py` — 结构测试集缓存适配器
 - `app/datasets/registry.py` — 数据集路径注册和可用状态
 - `app/evaluation/runner.py` — 逐样本实验、结果存储和断点续跑
 - `app/evaluation/workbench.py` — 单样本浏览和重新识别
@@ -158,6 +160,7 @@ pred_html 不保留换行。用 `table_ocr_pred.rec_texts` + `rec_boxes` 按 Y �
   修改事件函数名时需要同步这两处
 - 模型 HTML 必须先经过 `sanitizeTableHtml()`；禁止直接插入模型返回原文
 - FinTabNet 工作台真值状态为 `not_available`，不得用 OCR 词框伪造单元格真值
+- FinTabNet.c 的结构真值来自 XML 规范化，不是 OCR 词框推断
 - FinTabNet 对比中 `quality_winner=null`；单元格数量不能作为质量胜者依据
 - 批量实验写入 `experiments/`，该目录和数据集一样不进入 Git；续跑以
   `results.jsonl` 中每个 `sample_id` 的最后一条结果为准

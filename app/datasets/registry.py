@@ -4,17 +4,23 @@ import os
 from pathlib import Path
 
 from app.datasets.fintabnet import FinTabNetDataset
+from app.datasets.fintabnet_c_structure import (
+    FinTabNetCStructureDataset,
+)
 
 
 DEFAULT_FINTABNET_PATH = (
     r"D:\dataset\fintabnet-pubtables-full\test"
+)
+DEFAULT_FINTABNET_C_PATH = (
+    r"D:\dataset\FinTabNet.c\FinTabNet.c-Structure"
 )
 
 
 class DatasetRegistry:
     """按稳定 ID 管理可用数据集。"""
 
-    def __init__(self, fintabnet_path=None):
+    def __init__(self, fintabnet_path=None, fintabnet_c_path=None):
         self.datasets = {
             "fintabnet-test": {
                 "id": "fintabnet-test",
@@ -27,6 +33,19 @@ class DatasetRegistry:
                     )
                 ),
                 "type": "fintabnet",
+            },
+            "fintabnet-c-structure-test": {
+                "id": "fintabnet-c-structure-test",
+                "name": "FinTabNet.c Structure Test",
+                "path": Path(
+                    fintabnet_c_path
+                    or os.environ.get(
+                        "PP_FINTABNET_C_STRUCTURE_PATH",
+                        DEFAULT_FINTABNET_C_PATH,
+                    )
+                ),
+                "type": "fintabnet-c-structure",
+                "split": "test",
             },
         }
         self._cache = {}
@@ -65,11 +84,21 @@ class DatasetRegistry:
             raise KeyError(f"数据集不存在: {dataset_id}")
         dataset = self.datasets[dataset_id]
         path = dataset["path"].resolve()
-        cache_key = (dataset_id, str(path))
+        cache_key = (
+            dataset_id,
+            str(path),
+            dataset.get("split"),
+        )
         if cache_key not in self._cache:
             if not path.exists():
                 raise FileNotFoundError(
                     f"数据集路径不存在: {path}"
                 )
-            self._cache[cache_key] = FinTabNetDataset(path)
+            if dataset["type"] == "fintabnet-c-structure":
+                self._cache[cache_key] = FinTabNetCStructureDataset(
+                    path,
+                    split=dataset.get("split", "test"),
+                )
+            else:
+                self._cache[cache_key] = FinTabNetDataset(path)
         return self._cache[cache_key]

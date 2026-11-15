@@ -15,6 +15,7 @@
 - 目录、结构化和跨页表格合并位于 `app/services/structure.py`
 - 表格模型适配器和注册表位于 `app/engines/`
 - FinTabNet 数据集适配器位于 `app/datasets/fintabnet.py`
+- FinTabNet.c XML 预处理位于 `app/datasets/preprocessing.py`
 - 批量实验和断点续跑位于 `app/evaluation/runner.py`
 - 指标重算位于 `app/evaluation/metrics.py`
 - 前端样式和 ES Modules 位于 `frontend/`

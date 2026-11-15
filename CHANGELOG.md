@@ -2,6 +2,17 @@
 
 ## 2026-11-15
 
+### feat: FinTabNet.c 结构预处理与真实指标
+- 新增 FinTabNet.c XML 预处理，将行列框、跨单元格框和词框规范化为 cells/HTML
+- 新增 rows/cols 排序、spanning-cell 映射、文本归属和换行恢复
+- 完整 test 9,289 条预处理成功，失败数和结构对齐警告数均为 0
+- 新增 `fintabnet-c-structure-test` 数据集注册和批量运行入口
+- `BatchRunner` 现在将样本结构真值写入逐样本结果
+- 新增结构邻接 Precision/Recall/F1；HTML 解析保留 rowspan/colspan
+- 新增 10 项预处理、span 和结构指标测试；全部 92 项测试通过
+- TableMagic test 前 20 条：结构 F1 0.7833、单元格 IoU 0.5735、
+  文本召回 0.2834、CER 0.5263
+
 ### feat: 多模型实验对比与报告导出
 - 新增同数据集、同范围多模型对比 CLI 和可恢复对比目录
 - 每个模型保留独立实验、指标、配置和结果

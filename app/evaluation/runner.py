@@ -378,6 +378,7 @@ class BatchRunner:
             "html_present": bool(table_html),
             "cells": cells,
             "html": table_html,
+            "ground_truth": sample.ground_truth,
             "errors": errors,
         }
         return result

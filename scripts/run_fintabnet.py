@@ -10,6 +10,7 @@ if str(PROJECT_DIR) not in sys.path:
     sys.path.insert(0, str(PROJECT_DIR))
 
 from app.datasets.fintabnet import FinTabNetDataset
+from app.datasets.registry import DatasetRegistry
 from app.evaluation.runner import BatchRunner, ExperimentStore
 
 
@@ -22,6 +23,15 @@ DEFAULT_PARQUET = (
 def build_parser():
     parser = argparse.ArgumentParser(
         description="运行 FinTabNet 批量表格识别实验",
+    )
+    parser.add_argument(
+        "--dataset",
+        choices=[
+            "fintabnet-pubtables",
+            "fintabnet-c-structure-test",
+        ],
+        default="fintabnet-pubtables",
+        help="数据集类型",
     )
     parser.add_argument(
         "--parquet",
@@ -73,6 +83,12 @@ def _load_store(args, logger):
     dataset = store.experiment["dataset"]
     model = store.experiment["model"]
     selection = store.experiment["selection"]
+    dataset_type = dataset.get("type", "fintabnet-pubtables")
+    args.dataset = (
+        "fintabnet-c-structure-test"
+        if dataset_type == "fintabnet-c-structure"
+        else "fintabnet-pubtables"
+    )
     args.parquet = dataset["input_path"]
     args.limit = selection["limit"]
     args.start = selection["start"]
@@ -132,8 +148,13 @@ def main(argv=None):
 
     logger = logging.getLogger("pp-struct-batch")
     store = _load_store(args, logger)
-    dataset_path = args.parquet or DEFAULT_PARQUET
-    dataset = FinTabNetDataset(dataset_path)
+    if args.dataset == "fintabnet-c-structure-test":
+        dataset = DatasetRegistry().get_dataset(
+            "fintabnet-c-structure-test"
+        )
+    else:
+        dataset_path = args.parquet or DEFAULT_PARQUET
+        dataset = FinTabNetDataset(dataset_path)
     if store is not None:
         recorded_fingerprint = store.experiment["dataset"]["fingerprint"]
         if dataset.describe()["fingerprint"] != recorded_fingerprint:

@@ -173,6 +173,31 @@ python scripts/compute_metrics.py --experiment-dir experiments/stage3-smoke
 FinTabNet 没有单元格或 HTML 结构真值，因此单元格 IoU、文本召回、
 CER/WER、TEDS/TEDS-S 会明确标记为无真值，不会填入推测值。
 
+### FinTabNet.c 完整结构测试集
+
+`FinTabNet.c-Structure` 使用图像、XML 几何结构和词框 JSON。先规范化 XML：
+
+```bash
+python scripts/prepare_fintabnet_c.py \
+  --root D:\dataset\FinTabNet.c\FinTabNet.c-Structure \
+  --split test
+```
+
+预处理会在 `data/processed/fintabnet-c-structure/test.jsonl` 生成被 Git 忽略的
+缓存，包括单元格行列、rowspan/colspan、像素坐标、文本和规范化 HTML。
+
+使用当前模型测试：
+
+```bash
+python scripts/run_fintabnet.py \
+  --dataset fintabnet-c-structure-test \
+  --limit 20
+```
+
+完整 test 共 9,289 张表，可用 `--limit 9289` 运行。全量耗时较长，支持通过
+实验目录断点续跑。结构真值可用时，报告会计算单元格 IoU、文本召回、CER/WER
+和结构邻接关系 Precision/Recall/F1。
+
 ### 模型注册与切换
 
 默认清单为 `configs/models/registry.json`，包含 PP-TableMagic V2 和
