@@ -141,7 +141,8 @@ experiments/{experiment_id}/
 ├─ experiment.json    # 数据集指纹、模型和运行参数
 ├─ results.jsonl      # 逐样本 cells、HTML、耗时和状态
 ├─ failures.jsonl     # 当前失败样本
-└─ summary.json       # 累计完成、成功、失败和耗时
+├─ metrics.json       # 可独立重算的指标和状态
+└─ summary.json       # 累计统计及 metrics 副本
 ```
 
 断点续跑：
@@ -155,6 +156,19 @@ python test_fintabnet.py --resume experiments/stage3-smoke
 ```bash
 python test_fintabnet.py --resume experiments/stage3-smoke --retry-failed
 ```
+
+### 实验指标
+
+从已有逐样本结果重新计算指标，不需要重新运行模型：
+
+```bash
+python scripts/compute_metrics.py --experiment-dir experiments/stage3-smoke
+```
+
+当前基础指标包括表格检出率、平均单元格数、成功率、HTML 覆盖率、
+尝试次数、推理耗时 P50/P95，以及基于单样本耗时总和的吞吐量。
+FinTabNet 没有单元格或 HTML 结构真值，因此单元格 IoU、文本召回、
+CER/WER、TEDS/TEDS-S 会明确标记为无真值，不会填入推测值。
 
 ### 模型注册与切换
 

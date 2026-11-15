@@ -16,6 +16,7 @@
 - 表格模型适配器和注册表位于 `app/engines/`
 - FinTabNet 数据集适配器位于 `app/datasets/fintabnet.py`
 - 批量实验和断点续跑位于 `app/evaluation/runner.py`
+- 指标重算位于 `app/evaluation/metrics.py`
 
 ## 2. 运行环境
 
@@ -100,3 +101,17 @@ python test_fintabnet.py --limit 3
 - 至少 3 条 FinTabNet 样本完成表格识别。
 - `/api/model-status` 返回 `status=ready`、`gpu=true`、`table_engine=paddle`。
 - 现有 API 路径、页面布局和识别参数保持不变。
+
+## 7. 阶段 4 真实指标基线
+
+实验：`experiments/stage3-smoke`
+
+- 已检测样本：3。
+- 表格检出率：1.0。
+- 平均单元格数：24.0。
+- 推理耗时 P50：564.09 ms。
+- 推理耗时 P95：3084.80 ms。
+- 单样本耗时吞吐量：0.744 samples/s，不含模型启动和数据读取。
+- HTML 覆盖率：1.0。
+- FinTabNet 单元格/HTML 真值覆盖：0。
+- 单元格 IoU、文本召回、CER/WER、TEDS/TEDS-S：`null`，无真值。

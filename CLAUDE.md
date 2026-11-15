@@ -39,7 +39,9 @@ PDF 上传
 - `app/engines/rapid_table.py` — RapidTable 适配器
 - `app/datasets/fintabnet.py` — FinTabNet Parquet 分片与样本
 - `app/evaluation/runner.py` — 逐样本实验、结果存储和断点续跑
+- `app/evaluation/metrics.py` — 基础指标、百分位和可选真值指标
 - `scripts/run_fintabnet.py` — FinTabNet 批量运行 CLI
+- `scripts/compute_metrics.py` — 从逐样本结果重算指标
 - `configs/models/registry.json` — 默认模型注册清单
 - `index.html` — 全部前端（上传、可视化、双向联动、表格/树形视图）
 - `model/` — PP-DocLayoutV3 模型缓存（首次启动自动下载）
@@ -138,3 +140,5 @@ pred_html 不保留换行。用 `table_ocr_pred.rec_texts` + `rec_boxes` 按 Y �
 - 前端 `.cells-table td` 需要 `white-space: pre-line` 才能渲染 `\n` 换行
 - 批量实验写入 `experiments/`，该目录和数据集一样不进入 Git；续跑以
   `results.jsonl` 中每个 `sample_id` 的最后一条结果为准
+- `metrics.json` 必须只从逐样本结果重算；无真值指标写 `null` 和明确状态，
+  不得把平均单元格数解释为结构准确率

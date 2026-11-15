@@ -8,6 +8,8 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+from app.evaluation.metrics import compute_metrics
+
 
 EXPERIMENT_FORMAT_VERSION = 1
 EXPERIMENT_ID_PATTERN = re.compile(
@@ -39,6 +41,7 @@ class ExperimentStore:
         self.results_path = self.directory / "results.jsonl"
         self.failures_path = self.directory / "failures.jsonl"
         self.summary_path = self.directory / "summary.json"
+        self.metrics_path = self.directory / "metrics.json"
         self.temp_dir = self.directory / ".tmp"
         if not self.experiment_path.exists():
             raise FileNotFoundError(
@@ -186,8 +189,43 @@ class ExperimentStore:
             ),
             "total_elapsed_ms": round(sum(elapsed_values), 2),
         }
-        atomic_write_json(self.summary_path, summary)
+        self.write_metrics_report(
+            summary=summary,
+            results=results,
+        )
         return summary
+
+    def write_metrics_report(self, summary=None, results=None):
+        """重算指标并同步写入独立报告和 summary。"""
+        results = results or self.load_latest_results()
+        report = compute_metrics(
+            results.values(),
+            experiment=self.experiment,
+        )
+        atomic_write_json(self.metrics_path, report)
+
+        if summary is None:
+            if self.summary_path.exists():
+                summary = json.loads(
+                    self.summary_path.read_text(encoding="utf-8")
+                )
+            else:
+                summary = {
+                    "format_version": EXPERIMENT_FORMAT_VERSION,
+                    "experiment_id": self.experiment["experiment_id"],
+                    "dataset": self.experiment["dataset"],
+                    "model": self.experiment["model"],
+                    "selection": self.experiment["selection"],
+                }
+        summary["metrics"] = report["metrics"]
+        summary["metric_status"] = report["metric_status"]
+        summary["metric_definitions"] = report["definitions"]
+        summary["ground_truth_coverage"] = report[
+            "ground_truth_coverage"
+        ]
+        summary["metrics_updated_at"] = report["source"]["generated_at"]
+        atomic_write_json(self.summary_path, summary)
+        return report
 
 
 class BatchRunner:
