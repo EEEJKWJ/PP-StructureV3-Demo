@@ -6,7 +6,8 @@ PDF 文档版面结构化分析工具。上传 PDF → 版面检测 → 提取�
 `server.py` 保留 FastAPI 路由和兼容入口，文档、版面、OCR、表格识别已拆到
 `app/services/`，目录解析、页面结构化和跨页表格合并位于结构服务；
 表格模型通过 `app/engines/` 的适配器和 JSON 注册表切换；
-`index.html` 仍是原生 JS 单文件前端。
+`index.html` 只保留页面结构；CSS 与原生 ES Modules 位于 `frontend/`，
+不依赖 Node.js 构建。
 
 ## 架构与模型管线
 
@@ -43,7 +44,14 @@ PDF 上传
 - `scripts/run_fintabnet.py` — FinTabNet 批量运行 CLI
 - `scripts/compute_metrics.py` — 从逐样本结果重算指标
 - `configs/models/registry.json` — 默认模型注册清单
-- `index.html` — 全部前端（上传、可视化、双向联动、表格/树形视图）
+- `index.html` — 页面结构
+- `frontend/css/app.css` — 原单文件页面的样式
+- `frontend/js/app.js` — 上传、检测、页面选择和生命周期
+- `frontend/js/state.js` — 页面状态和 localStorage
+- `frontend/js/api.js` — FastAPI 请求
+- `frontend/js/results.js` — JSON、区域、表格、树形和目录渲染
+- `frontend/js/interactions.js` — 双向高亮联动
+- `frontend/js/overlay.js` — 图片覆盖层
 - `model/` — PP-DocLayoutV3 模型缓存（首次启动自动下载）
 - `model/ocr/` — PP-OCRv5 ONNX 模型缓存
 - `~/.paddlex/official_models/` — PP-TableMagic V2 子模型缓存（8 个模型）
@@ -138,6 +146,8 @@ pred_html 不保留换行。用 `table_ocr_pred.rec_texts` + `rec_boxes` 按 Y �
 - 前端状态栏轮询 `/api/model-status`，表格引擎就绪后显示 "表格: PP-TableMagic V2"
 - `uvicorn --reload` 开发模式下文件改动自动重载
 - 前端 `.cells-table td` 需要 `white-space: pre-line` 才能渲染 `\n` 换行
+- HTML 中保留 `onclick` 入口，`app.js` 启动时显式绑定到 `window`；
+  修改事件函数名时需要同步这两处
 - 批量实验写入 `experiments/`，该目录和数据集一样不进入 Git；续跑以
   `results.jsonl` 中每个 `sample_id` 的最后一条结果为准
 - `metrics.json` 必须只从逐样本结果重算；无真值指标写 `null` 和明确状态，

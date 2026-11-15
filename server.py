@@ -18,6 +18,7 @@ import fitz  # PyMuPDF
 from PIL import Image
 from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.services.layout import LayoutService
 from app.services.ocr import OCRService
@@ -29,6 +30,11 @@ logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("pp-struct")
 
 app = FastAPI(title="PP-StructureV3 Demo")
+app.mount(
+    "/frontend",
+    StaticFiles(directory="frontend"),
+    name="frontend",
+)
 
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)

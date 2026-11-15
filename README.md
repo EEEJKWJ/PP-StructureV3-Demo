@@ -51,7 +51,7 @@ PDF 文档版面结构化分析工具。上传 PDF 后自动检测版面区域�
 | 表格结构识别 | 可注册适配器；默认 PP-TableMagic V2，可切换 RapidTable |
 | PDF 处理 | PyMuPDF（渲染 + 文字提取 + 表格提取）|
 | 后端 | FastAPI |
-| 前端 | 单文件 HTML（原生 JS，无框架依赖）|
+| 前端 | 原生 HTML + ES Modules（无框架、无构建步骤）|
 
 ## 快速开始
 
@@ -251,10 +251,15 @@ python scripts/check_baseline.py --gpu --limit 3
 ├── app/evaluation/     # 批量实验、断点续跑和后续指标
 ├── configs/models/     # 模型注册清单和自定义配置说明
 ├── scripts/            # 批量运行等命令行入口
-├── index.html          # 单文件前端（上传 + 可视化 + 双向联动）
+├── index.html          # 页面结构
+├── frontend/css/       # 页面样式
+├── frontend/js/        # 状态、API、结果、高亮和覆盖层模块
 ├── ppocr5.py           # PP-OCRv5 ONNX 推理引擎
 ├── requirements.txt    # Python 依赖
 ├── model/              # 版面检测模型（首次启动自动下载）
 │   └── ocr/            # OCR 模型（首次启动自动下载）
 └── .gitignore
 ```
+
+前端不需要 Node.js。浏览器直接通过 FastAPI 的 `/frontend/` 静态路由加载 CSS
+和 ES Modules。

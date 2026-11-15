@@ -2,6 +2,15 @@
 
 ## 2026-11-15
 
+### refactor: 前端 CSS 与 ES Modules 拆分
+- 将 `index.html` 的内联 CSS 原样迁移到 `frontend/css/app.css`
+- JavaScript 拆分为 state、API、结果渲染、高亮、覆盖层和应用入口模块
+- FastAPI 新增 `/frontend/` 静态资源挂载，无新增 Node.js 构建步骤
+- 保留 HTML 内联事件入口，并在模块启动时显式绑定到 `window`
+- 新增 7 项前端静态结构和资源路由测试；全部 57 项测试通过
+- 迁移前后 CSS 规范化内容和页面主体 DOM 完全一致
+- 无界面 Chrome 执行全部模块成功，页面写入 `frontendReady` 标记
+
 ### feat: 可重算基础指标与真值状态
 - 新增 `app/evaluation/metrics.py`，从逐样本结果独立计算指标
 - 输出表格检出率、平均单元格数、成功率、HTML 覆盖率、平均尝试次数、
