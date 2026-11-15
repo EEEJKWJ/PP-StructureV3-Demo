@@ -63,6 +63,7 @@
               <span onclick="switchResultView('json')">JSON</span>
               <span onclick="switchResultView('json-all')" id="jsonAllTab" style="display:none">全文档</span>
               <span onclick="switchResultView('workbench')" id="workbenchTab">样本评测</span>
+              <span onclick="switchResultView('comparisons')" id="comparisonTab">模型对比</span>
             </div>
             <button class="btn btn-primary" id="detectBtn" disabled>
               检测当前页
@@ -79,6 +80,7 @@
         <div class="json-view" id="jsonView"></div>
         <div class="json-view" id="jsonAllView" style="display:none"></div>
         <div class="workbench-view" id="workbenchView"></div>
+        <div class="comparison-view" id="comparisonView"></div>
         <section class="metrics-panel" id="metricsPanel">
           <div class="metrics-title">实验指标</div>
           <div class="metrics-content" id="metricsContent">

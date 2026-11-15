@@ -32,10 +32,15 @@ export function switchResultView(mode) {
     mode === "json-all" ? "block" : "none";
   document.getElementById("workbenchView").style.display =
     mode === "workbench" ? "flex" : "none";
+  document.getElementById("comparisonView").style.display =
+    mode === "comparisons" ? "flex" : "none";
   if (mode === "json") renderJson();
   if (mode === "json-all") renderJsonAll();
   if (mode === "workbench") {
     window.dispatchEvent(new Event("pp:workbench-open"));
+  }
+  if (mode === "comparisons") {
+    window.dispatchEvent(new Event("pp:comparisons-open"));
   }
   saveCache();
 }

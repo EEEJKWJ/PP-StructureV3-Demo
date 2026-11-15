@@ -28,6 +28,7 @@ from app.services.structure import StructureService
 from app.evaluation.reports import EvaluationReports
 from app.datasets.registry import DatasetRegistry
 from app.evaluation.workbench import SampleWorkbenchService
+from app.evaluation.comparison_reports import ComparisonReports
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("pp-struct")
@@ -128,6 +129,7 @@ _table_service = TableService(log, _get_ocr)
 _evaluation_reports = EvaluationReports(Path("experiments"))
 _dataset_registry = DatasetRegistry()
 _sample_workbench = SampleWorkbenchService(_dataset_registry, log)
+_comparison_reports = ComparisonReports(Path("experiments/comparisons"))
 
 
 def _sync_table_engine_state():
@@ -395,6 +397,53 @@ async def run_dataset_sample(dataset_id: str, sample_id: str):
         )
     except (KeyError, FileNotFoundError) as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/api/comparisons")
+async def list_comparisons():
+    """列出已有模型对比报告。"""
+    return {
+        "ok": True,
+        "reports": _comparison_reports.list_reports(),
+    }
+
+
+@app.get("/api/comparisons/{comparison_id}")
+async def comparison_detail(comparison_id: str):
+    """返回完整模型对比报告。"""
+    try:
+        return _comparison_reports.get_report(comparison_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/api/comparisons/{comparison_id}/export/{export_format}")
+async def comparison_export(
+    comparison_id: str,
+    export_format: str,
+):
+    """下载 JSON、CSV 或 HTML 对比报告。"""
+    try:
+        path = _comparison_reports.export_path(
+            comparison_id,
+            export_format,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    media_types = {
+        "json": "application/json",
+        "csv": "text/csv",
+        "html": "text/html",
+    }
+    return FileResponse(
+        path,
+        media_type=media_types[export_format],
+        filename=f"{comparison_id}-report.{export_format}",
+    )
 
 
 # ── PDF 保存 + 按需渲染 ──────────────────────────────────────────────

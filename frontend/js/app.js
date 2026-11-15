@@ -34,6 +34,7 @@ import {
   state,
 } from "./state.js";
 import { initWorkbench } from "./workbench.js";
+import { initComparison } from "./comparison.js";
 
 Object.assign(window, {
   switchResultView,
@@ -511,6 +512,7 @@ setupResizePanel();
 setupEvents();
 setupModelPicker();
 initWorkbench();
+initComparison();
 pollModelStatus();
 loadModelOptions();
 loadMetricsPanel();
@@ -525,6 +527,8 @@ if (loadCache()) {
 
 if (window.location.hash === "#workbench") {
   switchResultView("workbench");
+} else if (window.location.hash === "#comparisons") {
+  switchResultView("comparisons");
 }
 
 document.documentElement.dataset.frontendReady = "true";

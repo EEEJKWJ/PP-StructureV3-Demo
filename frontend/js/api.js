@@ -93,3 +93,20 @@ export function datasetSampleImageUrl(datasetId, sampleId) {
   return `/api/datasets/${encodeURIComponent(datasetId)}/samples/`
     + `${encodeURIComponent(sampleId)}/image`;
 }
+
+export async function listComparisons() {
+  return responseJson(await fetch("/api/comparisons"));
+}
+
+export async function getComparison(comparisonId) {
+  return responseJson(
+    await fetch(
+      `/api/comparisons/${encodeURIComponent(comparisonId)}`,
+    ),
+  );
+}
+
+export function comparisonExportUrl(comparisonId, format) {
+  return `/api/comparisons/${encodeURIComponent(comparisonId)}`
+    + `/export/${encodeURIComponent(format)}`;
+}

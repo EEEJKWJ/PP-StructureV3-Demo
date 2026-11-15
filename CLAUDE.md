@@ -42,6 +42,8 @@ PDF 上传
 - `app/datasets/registry.py` — 数据集路径注册和可用状态
 - `app/evaluation/runner.py` — 逐样本实验、结果存储和断点续跑
 - `app/evaluation/workbench.py` — 单样本浏览和重新识别
+- `app/evaluation/comparison.py` — 多模型对齐、胜负和报告导出
+- `app/evaluation/comparison_reports.py` — 只读对比报告 API
 - `app/evaluation/metrics.py` — 基础指标、百分位和可选真值指标
 - `scripts/run_fintabnet.py` — FinTabNet 批量运行 CLI
 - `scripts/compute_metrics.py` — 从逐样本结果重算指标
@@ -54,6 +56,7 @@ PDF 上传
 - `frontend/js/results.js` — JSON、区域、表格、树形和目录渲染
 - `frontend/js/table-html.js` — 表格 HTML 白名单清理
 - `frontend/js/workbench.js` — 单样本评测工作台
+- `frontend/js/comparison.js` — 模型对比和报告下载
 - `frontend/js/interactions.js` — 双向高亮联动
 - `frontend/js/overlay.js` — 图片覆盖层
 - `app/evaluation/reports.py` — 只读实验指标报告 API
@@ -155,6 +158,7 @@ pred_html 不保留换行。用 `table_ocr_pred.rec_texts` + `rec_boxes` 按 Y �
   修改事件函数名时需要同步这两处
 - 模型 HTML 必须先经过 `sanitizeTableHtml()`；禁止直接插入模型返回原文
 - FinTabNet 工作台真值状态为 `not_available`，不得用 OCR 词框伪造单元格真值
+- FinTabNet 对比中 `quality_winner=null`；单元格数量不能作为质量胜者依据
 - 批量实验写入 `experiments/`，该目录和数据集一样不进入 Git；续跑以
   `results.jsonl` 中每个 `sample_id` 的最后一条结果为准
 - `metrics.json` 必须只从逐样本结果重算；无真值指标写 `null` 和明确状态，

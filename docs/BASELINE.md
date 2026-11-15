@@ -67,6 +67,9 @@
 | GET | `/api/datasets/{dataset_id}/samples/{sample_id}` | 获取样本元数据 |
 | GET | `/api/datasets/{dataset_id}/samples/{sample_id}/image` | 获取样本图片 |
 | POST | `/api/datasets/{dataset_id}/samples/{sample_id}/run` | 运行单样本 |
+| GET | `/api/comparisons` | 列出模型对比报告 |
+| GET | `/api/comparisons/{comparison_id}` | 获取对比详情 |
+| GET | `/api/comparisons/{comparison_id}/export/{format}` | 下载 JSON/CSV/HTML |
 
 阶段 1A 起，表格 block 同时返回 `cells` 和 `table_html`；结构化 table 项包含
 `headers`、`rows` 和 `html`。原始 `cells`、`headers`、`rows` 字段保持兼容。

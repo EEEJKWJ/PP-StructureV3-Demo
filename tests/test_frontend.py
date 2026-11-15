@@ -33,6 +33,7 @@ class FrontendStructureTests(unittest.TestCase):
             "css/app.css",
             "js/app.js",
             "js/api.js",
+            "js/comparison.js",
             "js/interactions.js",
             "js/overlay.js",
             "js/results.js",
@@ -104,6 +105,8 @@ class FrontendStructureTests(unittest.TestCase):
             ".model-picker",
             ".workbench-view",
             ".workbench-layout",
+            ".comparison-view",
+            ".comparison-table",
         ):
             self.assertIn(selector, stylesheet)
 
@@ -113,6 +116,8 @@ class FrontendStructureTests(unittest.TestCase):
         self.assertIn('id="metricsContent"', self.index)
         self.assertIn('id="workbenchView"', self.index)
         self.assertIn('id="workbenchTab"', self.index)
+        self.assertIn('id="comparisonView"', self.index)
+        self.assertIn('id="comparisonTab"', self.index)
 
     def test_sanitizer_blocks_executable_content(self):
         source = (
@@ -126,6 +131,29 @@ class FrontendStructureTests(unittest.TestCase):
             '"iframe"',
         ):
             self.assertIn(token, source)
+
+    def test_comparison_view_and_cli_are_registered(self):
+        comparison_source = (
+            FRONTEND_DIR / "js" / "comparison.js"
+        ).read_text(encoding="utf-8")
+
+        self.assertTrue(
+            (PROJECT_DIR / "scripts" / "compare_models.py").is_file()
+        )
+        self.assertIn("pp:comparisons-open", comparison_source)
+        cli_source = (
+            PROJECT_DIR / "scripts" / "compare_models.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("report.json", cli_source)
+        self.assertIn("不可比较", comparison_source)
+
+    def test_comparison_empty_state_does_not_fabricate_metrics(self):
+        comparison_source = (
+            FRONTEND_DIR / "js" / "comparison.js"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("暂无模型对比报告", comparison_source)
+        self.assertIn("compare_models.py", comparison_source)
 
     def test_no_frontend_build_manifest_is_required(self):
         self.assertFalse((PROJECT_DIR / "package.json").exists())
@@ -142,6 +170,7 @@ class FrontendStaticRouteTests(unittest.TestCase):
             "css/app.css",
             "js/api.js",
             "js/app.js",
+            "js/comparison.js",
             "js/interactions.js",
             "js/overlay.js",
             "js/results.js",

@@ -234,6 +234,33 @@ export PP_FINTABNET_PATH=/path/to/fintabnet/test
 也可直接打开 `http://localhost:3003/#workbench`。FinTabNet 当前没有单元格或
 HTML 结构真值，工作台会明确显示“无结构真值”，不会生成伪对比。
 
+### 模型对比与报告
+
+对同一数据集范围运行多个模型：
+
+```bash
+python scripts/compare_models.py \
+  --models pp-tablemagic-v2,rapidtable-slanet-plus \
+  --limit 10
+```
+
+续跑已有对比：
+
+```bash
+python scripts/compare_models.py \
+  --resume experiments/comparisons/stage8-real
+```
+
+对比目录包含每个模型的独立实验、逐样本对齐结果以及：
+
+- `report.json`
+- `report.csv`
+- `report.html`
+- `comparison_samples.jsonl`
+
+页面「模型对比」视图（`/#comparisons`）可查看模型指标、逐样本胜者和下载报告。
+没有结构真值时，质量胜者显示“不可比较”；完成胜负和延迟胜负分别统计。
+
 ### 基线检查
 
 纯函数回归测试：
