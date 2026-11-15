@@ -2,6 +2,16 @@
 
 ## 2026-11-15
 
+### refactor: 拆分结构化输出与跨页表格服务
+- 新增 `app/services/structure.py`，集中目录解析、标题/正文/表格结构化、
+  跨页续表合并和相关网格比较逻辑
+- 普通表格与合并表格统一使用同一套 headers/rows 生成逻辑
+- PDF 文字提取通过 `DocumentService` 回调注入，结构服务不重复文档职责
+- `server.py` 保留原有结构函数作为兼容入口，API 路径和响应字段不变
+- 新增 4 项结构服务测试；全部 20 项测试通过
+- 已有页面完整链路检出 1 个表格、69 个单元格，返回 22 行和 HTML
+- FinTabNet 前 3 条样本表格检出 3/3，均返回 HTML
+
 ### refactor: 拆分版面与 OCR 服务
 - 新增 `app/services/layout.py`，集中 PP-DocLayoutV3 的加载状态、设备选择、
   版面检测、重叠框过滤和阅读顺序排序

@@ -4,7 +4,8 @@
 
 PDF 文档版面结构化分析工具。上传 PDF → 版面检测 → 提取标题/表格/正文 → 输出结构化 JSON。
 `server.py` 保留 FastAPI 路由和兼容入口，文档、版面、OCR、表格识别已拆到
-`app/services/`；`index.html` 仍是原生 JS 单文件前端。
+`app/services/`，目录解析、页面结构化和跨页表格合并位于结构服务；
+`index.html` 仍是原生 JS 单文件前端。
 
 ## 架构与模型管线
 
@@ -31,6 +32,7 @@ PDF 上传
 - `app/services/ocr.py` — PP-OCRv5 模型缓存、按区域 OCR 和去重
 - `app/services/table.py` — PP-TableMagic V2/RapidTable 和 HTML 解析
 - `app/services/document.py` — PDF 保存、页面渲染、文字和表格提取
+- `app/services/structure.py` — 目录、页面 JSON 和跨页表格合并
 - `index.html` — 全部前端（上传、可视化、双向联动、表格/树形视图）
 - `model/` — PP-DocLayoutV3 模型缓存（首次启动自动下载）
 - `model/ocr/` — PP-OCRv5 ONNX 模型缓存

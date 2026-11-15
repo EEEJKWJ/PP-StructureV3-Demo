@@ -179,7 +179,7 @@ python scripts/check_baseline.py --gpu --limit 3
 ```
 ├── launch_pp_structurev3.py # Python 启动器（自动切换项目目录）
 ├── server.py           # FastAPI 应用、路由和兼容入口
-├── app/services/       # 文档、版面、OCR 和表格服务
+├── app/services/       # 文档、版面、OCR、表格和结构化服务
 ├── index.html          # 单文件前端（上传 + 可视化 + 双向联动）
 ├── ppocr5.py           # PP-OCRv5 ONNX 推理引擎
 ├── requirements.txt    # Python 依赖

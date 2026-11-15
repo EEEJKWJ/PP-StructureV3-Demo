@@ -9,6 +9,7 @@ import server
 from app.services.document import DocumentService
 from app.services.layout import LayoutService
 from app.services.ocr import OCRService
+from app.services.structure import StructureService
 from app.services.table import TableService
 
 
@@ -121,6 +122,184 @@ class StructureTests(unittest.TestCase):
         self.assertEqual(structured["content"][0]["headers"], ["名称", "数量"])
         self.assertEqual(structured["content"][0]["rows"], [{"名称": "苹果", "数量": "2"}])
         self.assertIn("<td>苹果</td>", structured["content"][0]["html"])
+
+
+class StructureServiceTests(unittest.TestCase):
+    def setUp(self):
+        self.logger = logging.getLogger("test-structure")
+        self.service = StructureService(
+            self.logger,
+            TableService(self.logger),
+        )
+
+    @staticmethod
+    def _table_cells(rows, top, widths=(100, 100)):
+        cells = []
+        left = 0
+        for row_index, row in enumerate(rows):
+            for col_index, text in enumerate(row):
+                right = left + widths[col_index]
+                cells.append({
+                    "row": row_index,
+                    "col": col_index,
+                    "text": text,
+                    "bbox": [
+                        left,
+                        top + row_index * 20,
+                        right,
+                        top + (row_index + 1) * 20,
+                    ],
+                })
+            left = 0
+        return cells
+
+    def test_toc_service_builds_items_with_bboxes(self):
+        block = {
+            "label": "text",
+            "bbox": [0, 0, 500, 300],
+        }
+        ocr_by_block = {
+            0: [
+                {"text": "第一章 牙体组织......1", "bbox": [10, 10, 200, 20]},
+                {"text": "第二章 牙周组织......8", "bbox": [10, 30, 200, 40]},
+                {"text": "第三章 口腔黏膜......20", "bbox": [10, 50, 200, 60]},
+            ],
+        }
+
+        structured = self.service.build_structured(
+            [block],
+            None,
+            1,
+            "",
+            False,
+            ocr_by_block,
+        )
+
+        self.assertEqual(structured["content"][0]["type"], "toc")
+        self.assertEqual(
+            structured["content"][0]["items"][1],
+            {
+                "title": "第二章牙周组织",
+                "page": 8,
+                "bbox": [10, 30, 200, 40],
+            },
+        )
+
+    def test_table_structure_inherits_empty_cells(self):
+        cells = self._table_cells(
+            [
+                ["名称", "内容"],
+                ["A", "Line 1\nLine 2"],
+                ["", "完成"],
+            ],
+            top=10,
+        )
+
+        headers, rows = self.service.table_structure(cells)
+
+        self.assertEqual(headers, ["名称", "内容"])
+        self.assertEqual(rows[0]["名称"], "A")
+        self.assertEqual(rows[0]["内容"], ["Line 1", "Line 2"])
+        self.assertEqual(rows[1]["名称"], "A")
+        self.assertEqual(rows[1]["内容"], "完成")
+
+    def test_column_structure_uses_width_ratios(self):
+        first = self._table_cells(
+            [["A", "B"], ["1", "2"]],
+            top=0,
+            widths=(100, 100),
+        )
+        same = self._table_cells(
+            [["C", "D"], ["3", "4"]],
+            top=100,
+            widths=(105, 95),
+        )
+        different = self._table_cells(
+            [["E", "F"], ["5", "6"]],
+            top=200,
+            widths=(160, 40),
+        )
+
+        self.assertEqual(
+            self.service.col_widths_ratio(first),
+            [0.5, 0.5],
+        )
+        self.assertTrue(self.service.col_structure_similar(first, same))
+        self.assertFalse(
+            self.service.col_structure_similar(first, different)
+        )
+
+    def test_cross_page_merge_skips_header_and_rebuilds_content(self):
+        first_cells = self._table_cells(
+            [["名称", "数量"], ["苹果", "2"]],
+            top=800,
+        )
+        second_cells = self._table_cells(
+            [["名称", "数量"], ["香蕉", "3"]],
+            top=10,
+        )
+        first_block = {
+            "label": "table",
+            "cells": first_cells,
+            "table_html": "<table>old</table>",
+        }
+        second_block = {
+            "label": "table",
+            "cells": second_cells,
+            "table_html": "<table>old</table>",
+        }
+        pages = [
+            {
+                "page": 1,
+                "height": 1000,
+                "blocks": [first_block],
+                "structured": {
+                    "content": [{
+                        "type": "table",
+                        "headers": ["名称", "数量"],
+                        "rows": [{"名称": "苹果", "数量": "2"}],
+                        "html": "<table>old</table>",
+                    }],
+                },
+            },
+            {
+                "page": 2,
+                "height": 1000,
+                "blocks": [second_block],
+                "structured": {
+                    "content": [{
+                        "type": "table",
+                        "headers": ["名称", "数量"],
+                        "rows": [{"名称": "香蕉", "数量": "3"}],
+                        "html": "<table>old</table>",
+                    }],
+                },
+            },
+        ]
+
+        merge_info = self.service.merge_cross_page_tables(pages)
+
+        self.assertEqual(
+            merge_info,
+            [{
+                "from_page": 2,
+                "into_page": 1,
+                "rows_added": 1,
+                "header_skipped": True,
+            }],
+        )
+        self.assertEqual(first_block["merged_from_pages"], [1, 2])
+        self.assertEqual(second_block["_merged_into"], (0,))
+        merged_table = pages[0]["structured"]["content"][0]
+        self.assertEqual(
+            merged_table["rows"],
+            [
+                {"名称": "苹果", "数量": "2"},
+                {"名称": "香蕉", "数量": "3"},
+            ],
+        )
+        self.assertIn("<td>香蕉</td>", merged_table["html"])
+        self.assertEqual(pages[1]["structured"]["content"], [])
 
 
 class LayoutAndOcrServiceTests(unittest.TestCase):

@@ -12,6 +12,7 @@
 - OCR 模型和区域识别位于 `app/services/ocr.py`
 - 表格识别位于 `app/services/table.py`
 - 文档与 PDF 操作位于 `app/services/document.py`
+- 目录、结构化和跨页表格合并位于 `app/services/structure.py`
 
 ## 2. 运行环境
 
