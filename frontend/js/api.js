@@ -35,3 +35,26 @@ export async function detectAllPages(docId) {
     }),
   );
 }
+
+export async function listModels() {
+  return responseJson(await fetch("/api/models"));
+}
+
+export async function activateModel(modelId) {
+  return responseJson(
+    await fetch(
+      `/api/models/${encodeURIComponent(modelId)}/activate`,
+      { method: "POST" },
+    ),
+  );
+}
+
+export async function listEvaluations() {
+  return responseJson(await fetch("/api/evaluations"));
+}
+
+export async function latestEvaluationMetrics() {
+  return responseJson(
+    await fetch("/api/evaluations/latest/metrics"),
+  );
+}

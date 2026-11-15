@@ -37,7 +37,9 @@ class FrontendStructureTests(unittest.TestCase):
             "js/overlay.js",
             "js/results.js",
             "js/state.js",
+            "js/table-html.js",
             "js/theme.js",
+            "tests/sanitizer.html",
         ]
         for relative_path in assets:
             self.assertTrue(
@@ -72,6 +74,7 @@ class FrontendStructureTests(unittest.TestCase):
             "highlightTocItem",
             "toggleCells",
             "switchCellsMode",
+            "switchTableHtmlMode",
             "toggleTreeNode",
         ]
         binding_start = app_source.index("Object.assign(window")
@@ -95,8 +98,29 @@ class FrontendStructureTests(unittest.TestCase):
             ".cells-table",
             ".bbox-overlay",
             ".json-view",
+            ".metrics-panel",
+            ".table-html-render",
+            ".model-picker",
         ):
             self.assertIn(selector, stylesheet)
+
+    def test_page_contains_model_picker_and_metrics_placeholders(self):
+        self.assertIn('id="modelSelect"', self.index)
+        self.assertIn('id="metricsPanel"', self.index)
+        self.assertIn('id="metricsContent"', self.index)
+
+    def test_sanitizer_blocks_executable_content(self):
+        source = (
+            FRONTEND_DIR / "js" / "table-html.js"
+        ).read_text(encoding="utf-8")
+        for token in (
+            "ALLOWED_TAGS",
+            "ALLOWED_ATTRIBUTES",
+            "BLOCKED_SUBTREES",
+            '"script"',
+            '"iframe"',
+        ):
+            self.assertIn(token, source)
 
     def test_no_frontend_build_manifest_is_required(self):
         self.assertFalse((PROJECT_DIR / "package.json").exists())
@@ -117,6 +141,7 @@ class FrontendStaticRouteTests(unittest.TestCase):
             "js/overlay.js",
             "js/results.js",
             "js/state.js",
+            "js/table-html.js",
             "js/theme.js",
         ):
             response = client.get(f"/frontend/{relative_path}")

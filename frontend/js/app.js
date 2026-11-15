@@ -1,8 +1,11 @@
 import {
+  activateModel,
   detectAllPages,
   detectPage,
   getModelStatus,
   getTextSource,
+  latestEvaluationMetrics,
+  listModels,
   uploadDocument,
 } from "./api.js";
 import {
@@ -14,10 +17,12 @@ import {
 } from "./interactions.js";
 import { drawBoxes } from "./overlay.js";
 import {
+  escHtml,
   renderJson,
   renderJsonAll,
   renderResults,
   switchCellsMode,
+  switchTableHtmlMode,
   switchResultView,
   toggleCells,
   toggleTreeNode,
@@ -39,8 +44,151 @@ Object.assign(window, {
   highlightTocItem,
   toggleCells,
   switchCellsMode,
+  switchTableHtmlMode,
   toggleTreeNode,
 });
+
+function formatMetric(value, digits, suffix = "") {
+  if (value === null || value === undefined) return "不适用";
+  return `${Number(value).toFixed(digits)}${suffix}`;
+}
+
+function metricCard(label, value) {
+  return `<div class="metric-card">
+    <div class="metric-label">${label}</div>
+    <div class="metric-value">${value}</div>
+  </div>`;
+}
+
+async function loadMetricsPanel() {
+  const content = document.getElementById("metricsContent");
+  try {
+    const payload = await latestEvaluationMetrics();
+    if (!payload.ok || !payload.report) {
+      content.innerHTML =
+        '<div class="metrics-empty">暂无评测结果，请先运行批量实验并计算指标</div>';
+      return;
+    }
+    const report = payload.report;
+    const metrics = report.metrics || {};
+    const source = report.source || {};
+    const modelId = source.model?.id || "unknown";
+    const datasetVersion = source.dataset?.version || "unknown";
+    const structureStatus =
+      report.metric_status?.teds || "not_available";
+    content.innerHTML = [
+      metricCard(
+        "表格检出率",
+        formatMetric(
+          metrics.table_detection_rate === null
+            || metrics.table_detection_rate === undefined
+            ? null
+            : metrics.table_detection_rate * 100,
+          2,
+          "%",
+        ),
+      ),
+      metricCard(
+        "平均单元格",
+        formatMetric(metrics.average_cells, 1),
+      ),
+      metricCard(
+        "P50",
+        formatMetric(metrics.latency_p50_ms, 1, " ms"),
+      ),
+      metricCard(
+        "P95",
+        formatMetric(metrics.latency_p95_ms, 1, " ms"),
+      ),
+      metricCard(
+        "吞吐量",
+        formatMetric(
+          metrics.throughput_samples_per_second,
+          3,
+          " samples/s",
+        ),
+      ),
+      `<div class="metrics-source">${escHtml(source.experiment_id || "unknown")} · ${escHtml(modelId)} · ${escHtml(datasetVersion)} · ${metrics.result_count || 0} 条结果</div>`,
+      `<div class="metrics-source">结构指标：${escHtml(structureStatus)}</div>`,
+    ].join("");
+  } catch {
+    content.innerHTML =
+      '<div class="metrics-empty">评测指标加载失败</div>';
+  }
+}
+
+async function loadModelOptions(activeModelId = null) {
+  const select = document.getElementById("modelSelect");
+  try {
+    const payload = await listModels();
+    if (!payload.ok || !payload.models?.length) {
+      throw new Error(payload.error || "没有已注册模型");
+    }
+    select.replaceChildren(
+      ...payload.models.map((model) => {
+        const option = document.createElement("option");
+        option.value = model.id;
+        option.textContent =
+          `${model.name} · v${model.version} · ${model.backend}${
+            model.id === payload.active_model ? " · 当前" : ""
+          }`;
+        return option;
+      }),
+    );
+    const selectedId =
+      activeModelId || payload.active_model || payload.default_model;
+    if (selectedId) select.value = selectedId;
+    select.disabled = payload.models.length < 2;
+  } catch (error) {
+    select.innerHTML =
+      `<option>模型列表加载失败: ${error.message}</option>`;
+    select.disabled = true;
+  }
+}
+
+async function handleModelChange() {
+  const select = document.getElementById("modelSelect");
+  const status = document.getElementById("modelStatus");
+  const detectButton = document.getElementById("detectBtn");
+  const detectAllButton = document.getElementById("detectAllBtn");
+  const modelId = select.value;
+
+  select.disabled = true;
+  detectButton.disabled = true;
+  detectAllButton.disabled = true;
+  status.textContent = "正在切换模型...";
+  status.style.background = "#ff9800";
+
+  try {
+    const result = await activateModel(modelId);
+    await loadModelOptions(result.active_model);
+    if (result.ok) {
+      const model = result.model || {};
+      status.textContent =
+        `模型就绪 | ${model.name || result.active_model}`;
+      status.style.background = "#34a853";
+      runtime.modelReady = true;
+    } else {
+      status.textContent =
+        `模型切换失败 | ${result.active_model || "无可用模型"}`;
+      status.style.background = "#ea4335";
+      console.error(result.error || "模型切换失败");
+    }
+  } catch (error) {
+    status.textContent = `模型切换失败 | ${error.message}`;
+    status.style.background = "#ea4335";
+    await loadModelOptions();
+  } finally {
+    detectButton.disabled = !state.activePage || !runtime.modelReady;
+    detectAllButton.disabled = !state.docId || !runtime.modelReady;
+  }
+}
+
+function setupModelPicker() {
+  document
+    .getElementById("modelSelect")
+    .addEventListener("change", handleModelChange);
+}
 
 function renderSidebar() {
   const sidebar = document.getElementById("sidebar");
@@ -360,7 +508,10 @@ function setupEvents() {
 setupUpload();
 setupResizePanel();
 setupEvents();
+setupModelPicker();
 pollModelStatus();
+loadModelOptions();
+loadMetricsPanel();
 
 if (loadCache()) {
   renderSidebar();

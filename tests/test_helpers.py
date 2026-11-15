@@ -99,10 +99,26 @@ class StructureTests(unittest.TestCase):
             {"row": 0, "col": 1, "text": "数量", "bbox": [50, 10, 90, 30]},
         ]
 
-        server._apply_table_result(block, cells)
+        table_result = {
+            "model": {
+                "id": "model-a",
+                "name": "Model A",
+                "backend": "fake",
+                "device": "cpu",
+            },
+            "elapsed_ms": 12.5,
+            "row_count": 1,
+            "col_count": 2,
+        }
+
+        server._apply_table_result(block, cells, table_result=table_result)
 
         self.assertEqual(block["cells"], cells)
         self.assertIn("<td>名称</td>", block["table_html"])
+        self.assertEqual(block["table_model"]["id"], "model-a")
+        self.assertEqual(block["table_elapsed_ms"], 12.5)
+        self.assertEqual(block["table_row_count"], 1)
+        self.assertEqual(block["table_col_count"], 2)
 
     def test_build_structured_keeps_current_table_shape(self):
         block = {

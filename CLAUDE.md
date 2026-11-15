@@ -50,8 +50,10 @@ PDF 上传
 - `frontend/js/state.js` — 页面状态和 localStorage
 - `frontend/js/api.js` — FastAPI 请求
 - `frontend/js/results.js` — JSON、区域、表格、树形和目录渲染
+- `frontend/js/table-html.js` — 表格 HTML 白名单清理
 - `frontend/js/interactions.js` — 双向高亮联动
 - `frontend/js/overlay.js` — 图片覆盖层
+- `app/evaluation/reports.py` — 只读实验指标报告 API
 - `model/` — PP-DocLayoutV3 模型缓存（首次启动自动下载）
 - `model/ocr/` — PP-OCRv5 ONNX 模型缓存
 - `~/.paddlex/official_models/` — PP-TableMagic V2 子模型缓存（8 个模型）
@@ -148,6 +150,7 @@ pred_html 不保留换行。用 `table_ocr_pred.rec_texts` + `rec_boxes` 按 Y �
 - 前端 `.cells-table td` 需要 `white-space: pre-line` 才能渲染 `\n` 换行
 - HTML 中保留 `onclick` 入口，`app.js` 启动时显式绑定到 `window`；
   修改事件函数名时需要同步这两处
+- 模型 HTML 必须先经过 `sanitizeTableHtml()`；禁止直接插入模型返回原文
 - 批量实验写入 `experiments/`，该目录和数据集一样不进入 Git；续跑以
   `results.jsonl` 中每个 `sample_id` 的最后一条结果为准
 - `metrics.json` 必须只从逐样本结果重算；无真值指标写 `null` 和明确状态，

@@ -16,7 +16,7 @@ from pathlib import Path
 
 import fitz  # PyMuPDF
 from PIL import Image
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -25,6 +25,7 @@ from app.services.ocr import OCRService
 from app.services.document import DocumentService
 from app.services.table import TableService
 from app.services.structure import StructureService
+from app.evaluation.reports import EvaluationReports
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("pp-struct")
@@ -122,6 +123,7 @@ _table_engine = None
 _table_engine_type = ""  # "paddle" | "rapid" | ""
 _table_engine_lock = threading.Lock()
 _table_service = TableService(log, _get_ocr)
+_evaluation_reports = EvaluationReports(Path("experiments"))
 
 
 def _sync_table_engine_state():
@@ -149,10 +151,20 @@ def recognize_table_structure(image_path: str, table_bbox: list) -> dict | None:
     return _table_service.recognize(image_path, table_bbox)
 
 
-def _apply_table_result(block, cells, table_html=""):
+def _apply_table_result(
+    block,
+    cells,
+    table_html="",
+    table_result=None,
+):
     """统一写入表格单元格和 HTML，保持所有识别路径字段一致。"""
     block["cells"] = cells
     block["table_html"] = table_html or _table_service.cells_to_html(cells)
+    if table_result:
+        block["table_model"] = table_result.get("model")
+        block["table_elapsed_ms"] = table_result.get("elapsed_ms")
+        block["table_row_count"] = table_result.get("row_count")
+        block["table_col_count"] = table_result.get("col_count")
 
 
 # ── 目录行解析 ────────────────────────────────────────────────────
@@ -276,6 +288,39 @@ async def reload_models():
 async def activate_model(model_id: str):
     """加载并激活指定模型；失败时保留或回退到可用模型。"""
     return _activate_table_model(model_id)
+
+
+@app.get("/api/evaluations")
+async def list_evaluations():
+    """返回存在指标报告的批量实验摘要。"""
+    return {
+        "ok": True,
+        "reports": _evaluation_reports.list_reports(),
+    }
+
+
+@app.get("/api/evaluations/latest/metrics")
+async def latest_evaluation_metrics():
+    """返回最新实验指标；没有实验时返回明确空状态。"""
+    report = _evaluation_reports.latest_metrics()
+    if report is None:
+        return {
+            "ok": False,
+            "error": "暂无评测结果",
+            "report": None,
+        }
+    return {"ok": True, "report": report}
+
+
+@app.get("/api/evaluations/{experiment_id}/metrics")
+async def evaluation_metrics(experiment_id: str):
+    """返回指定实验的完整指标报告。"""
+    try:
+        return _evaluation_reports.get_metrics(experiment_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 # ── PDF 保存 + 按需渲染 ──────────────────────────────────────────────
@@ -464,6 +509,7 @@ async def detect(doc_id: str, page_num: int):
                             block,
                             table_result["cells"],
                             table_result.get("html", ""),
+                            table_result,
                         )
                     else:
                         _apply_table_result(block, cells)
@@ -476,6 +522,7 @@ async def detect(doc_id: str, page_num: int):
                         block,
                         table_result["cells"],
                         table_result.get("html", ""),
+                        table_result,
                     )
                 else:
                     block["cells"] = None
@@ -565,6 +612,7 @@ async def detect_all(doc_id: str):
                                 block,
                                 table_result["cells"],
                                 table_result.get("html", ""),
+                                table_result,
                             )
                         else:
                             _apply_table_result(block, cells)
@@ -577,6 +625,7 @@ async def detect_all(doc_id: str):
                             block,
                             table_result["cells"],
                             table_result.get("html", ""),
+                            table_result,
                         )
                     else:
                         block["cells"] = None

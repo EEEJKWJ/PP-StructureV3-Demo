@@ -22,6 +22,7 @@ PDF 文档版面结构化分析工具。上传 PDF 后自动检测版面区域�
 - **扫描件 PDF**：PP-TableMagic V2 完整产线识别表格，输出单元格和 HTML 表格
 - PP-TableMagic 不可用时自动降级到 RapidTable (SLANet_plus)
 - 表格支持「网格」和「树形」两种可视化视图
+- 表格结果可展开 HTML 渲染和源码视图，模型 HTML 经过安全白名单清理
 
 ### 目录解析
 - 自动识别目录页，拆分标题和页码
@@ -34,6 +35,8 @@ PDF 文档版面结构化分析工具。上传 PDF 后自动检测版面区域�
 - 扫描件表格渲染 HTML 表格视图
 - 结果缓存到 localStorage，刷新不丢失
 - 右侧面板宽度可拖动调整
+- 顶部可直接切换已注册表格模型
+- 结果面板底部显示已有批量实验的真实指标
 
 ### 结构化 JSON 输出
 - `title`：标题文字，按行拆分去重
@@ -192,6 +195,19 @@ curl -X POST http://localhost:3003/api/models/reload
 
 新模型加载成功前不会替换当前模型。初始加载失败时会尝试目标模型的
 `fallback` 和 `default_model`，响应中会明确返回实际生效模型。
+
+页面顶部模型选择框也使用同一套切换接口。
+
+### 历史实验指标
+
+```bash
+curl http://localhost:3003/api/evaluations
+curl http://localhost:3003/api/evaluations/latest/metrics
+curl http://localhost:3003/api/evaluations/stage3-smoke/metrics
+```
+
+页面底部指标区读取最新实验报告，显示检出率、平均单元格数、P50/P95 和
+吞吐量，并标明评测模型、数据集版本和结构指标状态。没有报告时显示明确占位。
 
 ### 基线检查
 

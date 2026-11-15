@@ -59,6 +59,9 @@
 | GET | `/api/models/health` | 注册表及适配器健康状态 |
 | POST | `/api/models/reload` | 重载模型清单 |
 | POST | `/api/models/{model_id}/activate` | 激活并加载模型 |
+| GET | `/api/evaluations` | 列出有指标报告的实验 |
+| GET | `/api/evaluations/latest/metrics` | 获取最新实验指标 |
+| GET | `/api/evaluations/{experiment_id}/metrics` | 获取指定实验指标 |
 
 阶段 1A 起，表格 block 同时返回 `cells` 和 `table_html`；结构化 table 项包含
 `headers`、`rows` 和 `html`。原始 `cells`、`headers`、`rows` 字段保持兼容。

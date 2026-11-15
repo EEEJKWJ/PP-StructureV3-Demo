@@ -13,6 +13,12 @@
       <span id="modelStatus" class="tag" style="background: #ff9800"
         >模型加载中...</span
       >
+      <label class="model-picker">
+        模型
+        <select id="modelSelect" disabled>
+          <option>加载中...</option>
+        </select>
+      </label>
       <div style="flex: 1"></div>
       <label
         class="btn"
@@ -71,6 +77,12 @@
         </div>
         <div class="json-view" id="jsonView"></div>
         <div class="json-view" id="jsonAllView" style="display:none"></div>
+        <section class="metrics-panel" id="metricsPanel">
+          <div class="metrics-title">实验指标</div>
+          <div class="metrics-content" id="metricsContent">
+            <div class="metrics-empty">加载评测结果...</div>
+          </div>
+        </section>
       </div>
     </div>
     <script type="module" src="/frontend/js/app.js"></script>

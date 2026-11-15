@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Table HTML Sanitizer Test</title>
+  </head>
+  <body>
+    <div id="output"></div>
+    <script type="module">
+      import { sanitizeTableHtml } from "../js/table-html.js";
+
+      const hostile = `
+        <html><body>
+          <table onclick="window.pwned = true">
+            <tr>
+              <td rowspan="2" onmouseover="window.pwned = true">
+                <script>window.pwned = true<\/script>
+                Safe
+              </td>
+              <td colspan="3"><img src="x" onerror="window.pwned = true"></td>
+            </tr>
+          </table>
+        </body></html>
+      `;
+      const result = sanitizeTableHtml(hostile);
+      document.getElementById("output").innerHTML = result.html;
+      const html = document.getElementById("output").innerHTML;
+      document.documentElement.dataset.sanitizerReady = "true";
+      document.documentElement.dataset.scriptRemoved = String(
+        !html.toLowerCase().includes("script"),
+      );
+      document.documentElement.dataset.eventsRemoved = String(
+        !html.toLowerCase().includes("onclick")
+          && !html.toLowerCase().includes("onmouseover"),
+      );
+      document.documentElement.dataset.unknownRemoved = String(
+        !html.toLowerCase().includes("<img"),
+      );
+      document.documentElement.dataset.spansPreserved = String(
+        html.includes('rowspan="2"') && html.includes('colspan="3"'),
+      );
+      document.documentElement.dataset.notExecuted = String(
+        window.pwned !== true,
+      );
+    </script>
+  </body>
+</html>

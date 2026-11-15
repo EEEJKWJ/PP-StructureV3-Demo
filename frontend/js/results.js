@@ -1,7 +1,9 @@
 import { saveCache, state } from "./state.js";
+import { sanitizeTableHtml } from "./table-html.js";
 import { LABEL_COLORS } from "./theme.js";
 
 const cellsViewMode = {};
+const tableHtmlMode = {};
 
 export function escHtml(value, lineBreaks) {
   if (!value) return "";
@@ -120,6 +122,12 @@ export function renderResults() {
           extra =
             '<div class="image-hint">扫描件表格：已通过 OCR 识别文字，但无法解析单元格行列结构</div>';
         }
+        if (block.table_html) {
+          extra += renderTableHtml(block.table_html, index);
+        }
+        if (block.table_model || block.table_elapsed_ms !== undefined) {
+          extra += renderTableMetadata(block);
+        }
       }
 
       if (block.toc_items && block.toc_items.length > 0) {
@@ -139,6 +147,72 @@ export function renderResults() {
     </div>`;
     })
     .join("");
+}
+
+function renderTableMetadata(block) {
+  const model = block.table_model || {};
+  const modelName = model.name || "PDF 文字层";
+  const backend = model.backend
+    ? ` · ${model.backend}`
+    : "";
+  const device = model.device
+    ? ` · ${model.device}`
+    : "";
+  const elapsed = Number.isFinite(block.table_elapsed_ms)
+    ? ` · ${block.table_elapsed_ms.toFixed(2)} ms`
+    : "";
+  const shape =
+    block.table_row_count && block.table_col_count
+      ? ` · ${block.table_row_count}×${block.table_col_count}`
+      : "";
+  return `<div class="table-metadata">${escHtml(
+    `${modelName}${backend}${device}${elapsed}${shape}`,
+  )}</div>`;
+}
+
+export function renderTableHtml(tableHtml, blockIndex) {
+  const id = `table-html-${blockIndex}`;
+  const mode = tableHtmlMode[blockIndex] || "render";
+  let body = "";
+
+  if (mode === "source") {
+    body =
+      `<pre class="table-html-source">${escHtml(tableHtml)}</pre>`;
+  } else {
+    const sanitized = sanitizeTableHtml(tableHtml);
+    body = sanitized.error
+      ? `<div class="table-html-error">${escHtml(sanitized.error)}</div>`
+      : `<div class="table-html-render">${sanitized.html}</div>`;
+  }
+
+  let html =
+    `<div class="table-html-section"><div class="cells-toggle" onclick="event.stopPropagation(); toggleCells('${id}')">`;
+  html += "▶ 表格 HTML（点击展开）</div>";
+  html += `<div id="${id}" style="display:none">`;
+  html += '<div class="html-mode-switch" onclick="event.stopPropagation()">';
+  html +=
+    `<span class="${mode === "render" ? "active" : ""}" onclick="switchTableHtmlMode(${blockIndex}, 'render')">渲染</span>`;
+  html +=
+    `<span class="${mode === "source" ? "active" : ""}" onclick="switchTableHtmlMode(${blockIndex}, 'source')">源码</span>`;
+  html += "</div>";
+  html += body;
+  html += "</div></div>";
+  return html;
+}
+
+export function switchTableHtmlMode(blockIndex, mode) {
+  tableHtmlMode[blockIndex] = mode;
+  renderResults();
+  const element = document.getElementById(
+    `table-html-${blockIndex}`,
+  );
+  if (element) {
+    element.style.display = "block";
+    const toggle = element.previousElementSibling;
+    toggle.innerHTML = toggle.innerHTML
+      .replace("▶", "▼")
+      .replace("点击展开", "点击收起");
+  }
 }
 
 export function renderCellsTable(cells, blockIndex) {
