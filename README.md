@@ -117,7 +117,7 @@ pip install "onnxruntime-gpu==1.23.2"
 ### FinTabNet Parquet 冒烟测试
 
 可直接读取 HuggingFace Parquet 格式的 FinTabNet 分片，并按文件中的 Table
-类别框裁剪后调用 PP-TableMagic V2：
+类别框裁剪后调用当前注册模型。每次运行会创建独立实验目录并保存逐样本结果：
 
 ```bash
 python test_fintabnet.py --limit 10
@@ -131,7 +131,30 @@ python test_fintabnet.py --limit 1 --model rapidtable-slanet-plus
 
 默认文件是
 `D:\dataset\fintabnet-pubtables-full\test\test-00000-of-00006.parquet`，也可通过
-`--parquet` 指定其他分片。
+`--parquet` 指定其他分片或整个分片目录。完整测试目录当前包含 6 个分片、
+7,848 条样本；日常验证建议只运行前几条。
+
+每个实验目录包含：
+
+```text
+experiments/{experiment_id}/
+├─ experiment.json    # 数据集指纹、模型和运行参数
+├─ results.jsonl      # 逐样本 cells、HTML、耗时和状态
+├─ failures.jsonl     # 当前失败样本
+└─ summary.json       # 累计完成、成功、失败和耗时
+```
+
+断点续跑：
+
+```bash
+python test_fintabnet.py --resume experiments/stage3-smoke
+```
+
+续跑默认跳过已完成成功样本；加 `--retry-failed` 可重新执行失败样本：
+
+```bash
+python test_fintabnet.py --resume experiments/stage3-smoke --retry-failed
+```
 
 ### 模型注册与切换
 
@@ -210,7 +233,10 @@ python scripts/check_baseline.py --gpu --limit 3
 ├── server.py           # FastAPI 应用、路由和兼容入口
 ├── app/services/       # 文档、版面、OCR、表格和结构化服务
 ├── app/engines/        # 表格模型适配器、注册与回退
+├── app/datasets/       # FinTabNet 等表格数据集适配器
+├── app/evaluation/     # 批量实验、断点续跑和后续指标
 ├── configs/models/     # 模型注册清单和自定义配置说明
+├── scripts/            # 批量运行等命令行入口
 ├── index.html          # 单文件前端（上传 + 可视化 + 双向联动）
 ├── ppocr5.py           # PP-OCRv5 ONNX 推理引擎
 ├── requirements.txt    # Python 依赖

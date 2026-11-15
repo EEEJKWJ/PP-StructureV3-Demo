@@ -14,6 +14,8 @@
 - 文档与 PDF 操作位于 `app/services/document.py`
 - 目录、结构化和跨页表格合并位于 `app/services/structure.py`
 - 表格模型适配器和注册表位于 `app/engines/`
+- FinTabNet 数据集适配器位于 `app/datasets/fintabnet.py`
+- 批量实验和断点续跑位于 `app/evaluation/runner.py`
 
 ## 2. 运行环境
 
@@ -84,6 +86,7 @@ python test_fintabnet.py --limit 3
 ## 5. 已记录的真实样本结果
 
 - FinTabNet 第一条分片：1,308 条样本。
+- FinTabNet 完整测试目录：6 个分片，共 7,848 条样本。
 - 前 10 条烟雾测试：10/10 表格检出。
 - 单元格数范围：8～70。
 - 平均单元格数：36.2。

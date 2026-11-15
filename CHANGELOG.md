@@ -2,6 +2,18 @@
 
 ## 2026-11-15
 
+### feat: FinTabNet 数据集与可恢复批量实验
+- 新增 `app/datasets/`，支持 FinTabNet 单分片和多分片目录
+- 样本使用稳定 ID，记录表格框、整图回退、宽高和 OCR 词数
+- 新增 `app/evaluation/runner.py`，支持样本范围、批次、异常重试和断点续跑
+- 实验目录持久化 `experiment.json`、`results.jsonl`、`failures.jsonl` 和
+  `summary.json`，每完成一个样本立即写入
+- 续跑默认跳过成功样本，`--retry-failed` 可重新执行失败样本
+- `test_fintabnet.py` 迁移为兼容入口，底层使用 `scripts/run_fintabnet.py`
+- 新增 9 项数据集和批量运行测试；全部 40 项测试通过
+- 完整 FinTabNet 测试目录确认包含 6 个分片、7,848 条样本
+- 真实前 3 条样本均成功；立即续跑跳过 3 条且结果文件未重复追加
+
 ### feat: 表格模型适配器与 JSON 注册表
 - 新增 `app/engines/`，定义统一表格适配器协议、标准结果和输出工具
 - PP-TableMagic V2、RapidTable 和 HTTP 远程模型使用同一调用接口
