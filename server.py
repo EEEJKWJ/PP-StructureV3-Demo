@@ -118,12 +118,24 @@ _table_engine_lock = threading.Lock()
 _table_service = TableService(log, _get_ocr)
 
 
-def _get_table_engine():
-    """兼容现有状态接口，表格引擎由 TableService 统一管理。"""
+def _sync_table_engine_state():
     global _table_engine, _table_engine_type
-    _table_engine = _table_service.get_engine()
+    _table_engine = _table_service.engine
     _table_engine_type = _table_service.engine_type
     return _table_engine
+
+
+def _get_table_engine():
+    """兼容现有状态接口，表格引擎由 TableService 统一管理。"""
+    _table_service.get_engine()
+    return _sync_table_engine_state()
+
+
+def _activate_table_model(model_id: str) -> dict:
+    """兼容层：激活模型后同步旧状态变量。"""
+    result = _table_service.activate_model(model_id)
+    _sync_table_engine_state()
+    return result
 
 
 def recognize_table_structure(image_path: str, table_bbox: list) -> dict | None:
@@ -226,6 +238,38 @@ async def model_status():
         "gpu_name": gpu["name"],
         "table_engine": _table_engine_type or "none",
     }
+
+
+@app.get("/api/models")
+async def list_models():
+    """返回已注册表格模型及当前激活状态。"""
+    return _table_service.list_models()
+
+
+@app.get("/api/models/health")
+async def models_health():
+    """返回注册清单和当前适配器健康状态。"""
+    return _table_service.health()
+
+
+@app.post("/api/models/reload")
+async def reload_models():
+    """重载模型清单，不隐式切换当前模型。"""
+    try:
+        return _table_service.reload_models()
+    except Exception as exc:
+        return {
+            "ok": False,
+            "error": str(exc),
+            "active_model": _table_service.active_model_id,
+            "config_error": _table_service.registry.last_reload_error,
+        }
+
+
+@app.post("/api/models/{model_id}/activate")
+async def activate_model(model_id: str):
+    """加载并激活指定模型；失败时保留或回退到可用模型。"""
+    return _activate_table_model(model_id)
 
 
 # ── PDF 保存 + 按需渲染 ──────────────────────────────────────────────

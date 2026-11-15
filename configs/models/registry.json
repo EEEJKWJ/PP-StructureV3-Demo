@@ -1,0 +1,43 @@
+{
+  "default_model": "pp-tablemagic-v2",
+  "models": [
+    {
+      "id": "pp-tablemagic-v2",
+      "name": "PP-TableMagic V2",
+      "version": "2.x",
+      "adapter": "tablemagic",
+      "backend": "paddle",
+      "device": "gpu",
+      "source": "paddleocr://TableRecognitionPipelineV2/official",
+      "fallback": "rapidtable-slanet-plus",
+      "artifact_hash": null,
+      "options": {
+        "crop_padding": 5,
+        "return_raw": false,
+        "pipeline_kwargs": {
+          "use_layout_detection": false,
+          "use_doc_orientation_classify": false,
+          "use_doc_unwarping": false
+        }
+      }
+    },
+    {
+      "id": "rapidtable-slanet-plus",
+      "name": "RapidTable SLANet_plus",
+      "version": "3.x",
+      "adapter": "rapidtable",
+      "backend": "rapid",
+      "device": "cpu",
+      "source": "rapid_table://SLANETPLUS",
+      "fallback": null,
+      "artifact_hash": null,
+      "options": {
+        "crop_padding": 5,
+        "model_type": "SLANETPLUS",
+        "use_ocr": true,
+        "use_external_ocr": true,
+        "return_raw": false
+      }
+    }
+  ]
+}

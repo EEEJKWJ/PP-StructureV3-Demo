@@ -19,15 +19,32 @@ def main():
         default=r"D:\dataset\fintabnet-pubtables-full\test\test-00000-of-00006.parquet",
     )
     parser.add_argument("--limit", type=int, default=10)
+    parser.add_argument(
+        "--model",
+        help="模型注册清单中的模型 ID；省略时使用 default_model",
+    )
     args = parser.parse_args()
 
     parquet = pq.ParquetFile(args.parquet)
     batch = next(parquet.iter_batches(batch_size=args.limit))
     rows = batch.to_pylist()
 
-    engine = server._get_table_engine()
-    if server._table_engine_type != "paddle":
-        raise RuntimeError(f"TableMagic unavailable: {server._table_engine_type}")
+    if args.model:
+        activation = server._activate_table_model(args.model)
+        if not activation["ok"]:
+            raise RuntimeError(
+                f"Model activation failed: {activation.get('error')}"
+            )
+    else:
+        server._get_table_engine()
+    if server._table_engine_type not in ("paddle", "rapid"):
+        raise RuntimeError(
+            f"Table engine unavailable: {server._table_engine_type}"
+        )
+    print(
+        f"model={server._table_service.active_model_id} "
+        f"backend={server._table_engine_type}"
+    )
 
     successes = 0
     html_successes = 0

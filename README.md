@@ -48,7 +48,7 @@ PDF 文档版面结构化分析工具。上传 PDF 后自动检测版面区域�
 |------|------|
 | 版面检测 | [PP-DocLayoutV3](https://huggingface.co/PaddlePaddle/PP-DocLayoutV3_safetensors) (transformers + PyTorch) |
 | OCR 引擎 | [PP-OCRv5](https://github.com/PaddlePaddle/PaddleOCR) ONNX (onnxruntime) |
-| 表格结构识别 | PP-TableMagic V2（PaddlePaddle），降级 RapidTable |
+| 表格结构识别 | 可注册适配器；默认 PP-TableMagic V2，可切换 RapidTable |
 | PDF 处理 | PyMuPDF（渲染 + 文字提取 + 表格提取）|
 | 后端 | FastAPI |
 | 前端 | 单文件 HTML（原生 JS，无框架依赖）|
@@ -123,9 +123,38 @@ pip install "onnxruntime-gpu==1.23.2"
 python test_fintabnet.py --limit 10
 ```
 
+指定注册模型：
+
+```bash
+python test_fintabnet.py --limit 1 --model rapidtable-slanet-plus
+```
+
 默认文件是
 `D:\dataset\fintabnet-pubtables-full\test\test-00000-of-00006.parquet`，也可通过
 `--parquet` 指定其他分片。
+
+### 模型注册与切换
+
+默认清单为 `configs/models/registry.json`，包含 PP-TableMagic V2 和
+RapidTable。可通过 `PP_STRUCTURE_MODEL_CONFIG` 指向其他 JSON 清单。
+字段和自定义模型示例见 [configs/models/README.md](configs/models/README.md)。
+
+```bash
+# 查看模型及当前激活状态
+curl http://localhost:3003/api/models
+
+# 健康检查
+curl http://localhost:3003/api/models/health
+
+# 激活 RapidTable
+curl -X POST http://localhost:3003/api/models/rapidtable-slanet-plus/activate
+
+# 修改 JSON 后重载清单
+curl -X POST http://localhost:3003/api/models/reload
+```
+
+新模型加载成功前不会替换当前模型。初始加载失败时会尝试目标模型的
+`fallback` 和 `default_model`，响应中会明确返回实际生效模型。
 
 ### 基线检查
 
@@ -180,6 +209,8 @@ python scripts/check_baseline.py --gpu --limit 3
 ├── launch_pp_structurev3.py # Python 启动器（自动切换项目目录）
 ├── server.py           # FastAPI 应用、路由和兼容入口
 ├── app/services/       # 文档、版面、OCR、表格和结构化服务
+├── app/engines/        # 表格模型适配器、注册与回退
+├── configs/models/     # 模型注册清单和自定义配置说明
 ├── index.html          # 单文件前端（上传 + 可视化 + 双向联动）
 ├── ppocr5.py           # PP-OCRv5 ONNX 推理引擎
 ├── requirements.txt    # Python 依赖

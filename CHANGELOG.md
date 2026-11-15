@@ -2,6 +2,19 @@
 
 ## 2026-11-15
 
+### feat: 表格模型适配器与 JSON 注册表
+- 新增 `app/engines/`，定义统一表格适配器协议、标准结果和输出工具
+- PP-TableMagic V2、RapidTable 和 HTTP 远程模型使用同一调用接口
+- ONNX/PyTorch 适配器作为显式扩展占位符，激活失败不会伪装成功
+- 新增 `configs/models/registry.json`，默认 TableMagic，RapidTable 作为回退
+- 支持自定义模型目录、TableMagic `pipeline_kwargs` 和 RapidTable
+  `model_dir_or_path`
+- 新增模型列表、健康检查、重载和激活 API
+- 新模型加载成功后才切换；失败时保留当前模型或按清单回退
+- 新增 11 项模型注册与适配器测试；全部 31 项测试通过
+- 同一进程成功切换 TableMagic/RapidTable，同一页面分别返回 69/92 个单元格和 HTML
+- 默认 TableMagic 的 FinTabNet 前 3 条样本保持 3/3 检出
+
 ### refactor: 拆分结构化输出与跨页表格服务
 - 新增 `app/services/structure.py`，集中目录解析、标题/正文/表格结构化、
   跨页续表合并和相关网格比较逻辑

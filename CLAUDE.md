@@ -5,6 +5,7 @@
 PDF 文档版面结构化分析工具。上传 PDF → 版面检测 → 提取标题/表格/正文 → 输出结构化 JSON。
 `server.py` 保留 FastAPI 路由和兼容入口，文档、版面、OCR、表格识别已拆到
 `app/services/`，目录解析、页面结构化和跨页表格合并位于结构服务；
+表格模型通过 `app/engines/` 的适配器和 JSON 注册表切换；
 `index.html` 仍是原生 JS 单文件前端。
 
 ## 架构与模型管线
@@ -30,9 +31,13 @@ PDF 上传
 - `server.py` — FastAPI 应用、API 路由和旧函数兼容入口
 - `app/services/layout.py` — PP-DocLayoutV3 加载、版面检测和阅读顺序
 - `app/services/ocr.py` — PP-OCRv5 模型缓存、按区域 OCR 和去重
-- `app/services/table.py` — PP-TableMagic V2/RapidTable 和 HTML 解析
+- `app/services/table.py` — 模型注册调用和标准表格结果
 - `app/services/document.py` — PDF 保存、页面渲染、文字和表格提取
 - `app/services/structure.py` — 目录、页面 JSON 和跨页表格合并
+- `app/engines/registry.py` — 模型清单、激活、健康检查和回退
+- `app/engines/tablemagic.py` — PP-TableMagic V2 适配器
+- `app/engines/rapid_table.py` — RapidTable 适配器
+- `configs/models/registry.json` — 默认模型注册清单
 - `index.html` — 全部前端（上传、可视化、双向联动、表格/树形视图）
 - `model/` — PP-DocLayoutV3 模型缓存（首次启动自动下载）
 - `model/ocr/` — PP-OCRv5 ONNX 模型缓存
@@ -124,6 +129,7 @@ pred_html 不保留换行。用 `table_ocr_pred.rec_texts` + `rec_boxes` 按 Y �
 
 - 服务启动时后台线程初始化三个引擎：版面模型、OCR 模型、表格引擎
 - 表格引擎优先用 PP-TableMagic V2，import 失败或初始化失败时降级为 RapidTable
+- 模型切换通过 `/api/models/{model_id}/activate`；加载成功后才替换当前模型
 - 前端状态栏轮询 `/api/model-status`，表格引擎就绪后显示 "表格: PP-TableMagic V2"
 - `uvicorn --reload` 开发模式下文件改动自动重载
 - 前端 `.cells-table td` 需要 `white-space: pre-line` 才能渲染 `\n` 换行

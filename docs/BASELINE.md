@@ -13,6 +13,7 @@
 - 表格识别位于 `app/services/table.py`
 - 文档与 PDF 操作位于 `app/services/document.py`
 - 目录、结构化和跨页表格合并位于 `app/services/structure.py`
+- 表格模型适配器和注册表位于 `app/engines/`
 
 ## 2. 运行环境
 
@@ -50,6 +51,10 @@
 | POST | `/api/detect/{doc_id}/{page_num}` | 识别单页 |
 | POST | `/api/detect-all/{doc_id}` | 识别全部页面 |
 | DELETE | `/api/documents/{doc_id}` | 删除上传文档 |
+| GET | `/api/models` | 模型清单和当前激活状态 |
+| GET | `/api/models/health` | 注册表及适配器健康状态 |
+| POST | `/api/models/reload` | 重载模型清单 |
+| POST | `/api/models/{model_id}/activate` | 激活并加载模型 |
 
 阶段 1A 起，表格 block 同时返回 `cells` 和 `table_html`；结构化 table 项包含
 `headers`、`rows` 和 `html`。原始 `cells`、`headers`、`rows` 字段保持兼容。
