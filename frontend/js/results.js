@@ -30,8 +30,13 @@ export function switchResultView(mode) {
     mode === "json" ? "block" : "none";
   document.getElementById("jsonAllView").style.display =
     mode === "json-all" ? "block" : "none";
+  document.getElementById("workbenchView").style.display =
+    mode === "workbench" ? "flex" : "none";
   if (mode === "json") renderJson();
   if (mode === "json-all") renderJsonAll();
+  if (mode === "workbench") {
+    window.dispatchEvent(new Event("pp:workbench-open"));
+  }
   saveCache();
 }
 

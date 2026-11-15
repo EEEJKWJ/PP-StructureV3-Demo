@@ -151,6 +151,19 @@ class FinTabNetDataset(TableDataset):
                             ocr_box_count=len(
                                 row.get("ocr_boxes") or []
                             ),
+                        ground_truth={
+                            "status": "not_available",
+                            "reason": (
+                                "FinTabNet 当前数据没有单元格/HTML "
+                                "结构真值"
+                            ),
+                            "ocr_words": (
+                                row.get("ocr_words") or []
+                            ),
+                            "ocr_boxes": (
+                                row.get("ocr_boxes") or []
+                            ),
+                        },
                         )
                         selected += 1
                         global_index += 1

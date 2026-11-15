@@ -668,6 +668,131 @@ header .tag {
   font-size: 11px;
 }
 
+.workbench-view {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 10px 12px;
+  background: #fafafa;
+  display: none;
+  flex-direction: column;
+  gap: 10px;
+}
+.workbench-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.workbench-toolbar select,
+.workbench-toolbar button {
+  padding: 5px 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: #fff;
+  color: #333;
+  font-size: 11px;
+}
+.workbench-toolbar button {
+  cursor: pointer;
+}
+.workbench-toolbar button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.workbench-toolbar .workbench-id {
+  flex-basis: 100%;
+  overflow: hidden;
+  color: #888;
+  font-family: "SF Mono", "Menlo", monospace;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workbench-layout {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.8fr) minmax(220px, 1.2fr);
+  gap: 10px;
+}
+.workbench-preview,
+.workbench-result {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  background: #fff;
+}
+.workbench-preview img {
+  display: block;
+  width: 100%;
+  max-height: 260px;
+  object-fit: contain;
+}
+.workbench-meta {
+  margin-top: 6px;
+  color: #666;
+  font-size: 10px;
+  line-height: 1.6;
+  word-break: break-all;
+}
+.workbench-section-title {
+  margin-bottom: 6px;
+  color: #333;
+  font-size: 12px;
+  font-weight: 600;
+}
+.workbench-status {
+  display: inline-block;
+  margin-bottom: 6px;
+  padding: 2px 7px;
+  border-radius: 9px;
+  background: #e8f5e9;
+  color: #2e7d32;
+  font-size: 10px;
+}
+.workbench-status.failed,
+.workbench-status.no_table {
+  background: #ffebee;
+  color: #b71c1c;
+}
+.workbench-switches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 6px;
+}
+.workbench-switches button {
+  padding: 2px 8px;
+  border: 1px solid #ccc;
+  border-radius: 3px;
+  background: #fff;
+  color: #666;
+  cursor: pointer;
+  font-size: 10px;
+}
+.workbench-switches button.active {
+  border-color: #1a73e8;
+  background: #1a73e8;
+  color: #fff;
+}
+.workbench-switches button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.workbench-loading,
+.workbench-empty {
+  padding: 14px 6px;
+  color: #888;
+  font-size: 11px;
+}
+.workbench-error {
+  padding: 8px;
+  border-radius: 4px;
+  background: #ffebee;
+  color: #b71c1c;
+  font-size: 11px;
+}
+
 .metrics-panel {
   flex: 0 0 auto;
   max-height: 190px;

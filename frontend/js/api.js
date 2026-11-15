@@ -58,3 +58,38 @@ export async function latestEvaluationMetrics() {
     await fetch("/api/evaluations/latest/metrics"),
   );
 }
+
+export async function listDatasets() {
+  return responseJson(await fetch("/api/datasets"));
+}
+
+export async function listDatasetSamples(
+  datasetId,
+  offset = 0,
+  limit = 20,
+) {
+  const query = new URLSearchParams({
+    offset: String(offset),
+    limit: String(limit),
+  });
+  return responseJson(
+    await fetch(
+      `/api/datasets/${encodeURIComponent(datasetId)}/samples?${query}`,
+    ),
+  );
+}
+
+export async function runDatasetSample(datasetId, sampleId) {
+  return responseJson(
+    await fetch(
+      `/api/datasets/${encodeURIComponent(datasetId)}/samples/`
+        + `${encodeURIComponent(sampleId)}/run`,
+      { method: "POST" },
+    ),
+  );
+}
+
+export function datasetSampleImageUrl(datasetId, sampleId) {
+  return `/api/datasets/${encodeURIComponent(datasetId)}/samples/`
+    + `${encodeURIComponent(sampleId)}/image`;
+}

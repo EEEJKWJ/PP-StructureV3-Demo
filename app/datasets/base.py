@@ -22,6 +22,7 @@ class TableSample:
     image_id: int | None = None
     ocr_word_count: int = 0
     ocr_box_count: int = 0
+    ground_truth: dict | None = None
 
     def locating_info(self):
         """返回不包含图片大对象的样本定位信息。"""
@@ -52,3 +53,10 @@ class TableDataset(ABC):
     @abstractmethod
     def iter_samples(self, limit=None, start=0, batch_size=64):
         """按稳定顺序迭代样本。"""
+
+    def get_sample(self, sample_id, batch_size=256):
+        """按稳定 ID 获取样本；子类可覆盖为更高效实现。"""
+        for sample in self.iter_samples(batch_size=batch_size):
+            if sample.sample_id == sample_id:
+                return sample
+        raise KeyError(f"样本不存在: {sample_id}")

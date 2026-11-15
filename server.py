@@ -17,7 +17,7 @@ from pathlib import Path
 import fitz  # PyMuPDF
 from PIL import Image
 from fastapi import FastAPI, HTTPException, UploadFile, File
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from app.services.layout import LayoutService
@@ -26,6 +26,8 @@ from app.services.document import DocumentService
 from app.services.table import TableService
 from app.services.structure import StructureService
 from app.evaluation.reports import EvaluationReports
+from app.datasets.registry import DatasetRegistry
+from app.evaluation.workbench import SampleWorkbenchService
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("pp-struct")
@@ -124,6 +126,8 @@ _table_engine_type = ""  # "paddle" | "rapid" | ""
 _table_engine_lock = threading.Lock()
 _table_service = TableService(log, _get_ocr)
 _evaluation_reports = EvaluationReports(Path("experiments"))
+_dataset_registry = DatasetRegistry()
+_sample_workbench = SampleWorkbenchService(_dataset_registry, log)
 
 
 def _sync_table_engine_state():
@@ -320,6 +324,76 @@ async def evaluation_metrics(experiment_id: str):
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/api/datasets")
+async def list_datasets():
+    """返回可在单样本工作台浏览的数据集。"""
+    return {
+        "ok": True,
+        "datasets": _sample_workbench.list_datasets(),
+    }
+
+
+@app.get("/api/datasets/{dataset_id}/samples")
+async def list_dataset_samples(
+    dataset_id: str,
+    offset: int = 0,
+    limit: int = 20,
+):
+    """分页返回数据集样本元数据。"""
+    try:
+        return _sample_workbench.list_samples(
+            dataset_id,
+            offset=offset,
+            limit=limit,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (KeyError, FileNotFoundError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/api/datasets/{dataset_id}/samples/{sample_id}")
+async def dataset_sample(dataset_id: str, sample_id: str):
+    """返回一个样本的元数据。"""
+    try:
+        sample = _sample_workbench.get_sample(dataset_id, sample_id)
+        return {
+            "ok": True,
+            "sample": _sample_workbench.public_sample(sample),
+        }
+    except (KeyError, FileNotFoundError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get(
+    "/api/datasets/{dataset_id}/samples/{sample_id}/image"
+)
+async def dataset_sample_image(dataset_id: str, sample_id: str):
+    """返回数据集中的原始样本图片。"""
+    try:
+        content = _sample_workbench.get_image(dataset_id, sample_id)
+        return Response(content=content, media_type="image/jpeg")
+    except (KeyError, FileNotFoundError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post(
+    "/api/datasets/{dataset_id}/samples/{sample_id}/run"
+)
+async def run_dataset_sample(dataset_id: str, sample_id: str):
+    """使用当前模型重新识别一个数据集样本。"""
+    try:
+        return _sample_workbench.run_sample(
+            dataset_id,
+            sample_id,
+            recognize_table_structure,
+        )
+    except (KeyError, FileNotFoundError) as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 

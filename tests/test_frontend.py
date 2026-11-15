@@ -39,6 +39,7 @@ class FrontendStructureTests(unittest.TestCase):
             "js/state.js",
             "js/table-html.js",
             "js/theme.js",
+            "js/workbench.js",
             "tests/sanitizer.html",
         ]
         for relative_path in assets:
@@ -101,6 +102,8 @@ class FrontendStructureTests(unittest.TestCase):
             ".metrics-panel",
             ".table-html-render",
             ".model-picker",
+            ".workbench-view",
+            ".workbench-layout",
         ):
             self.assertIn(selector, stylesheet)
 
@@ -108,6 +111,8 @@ class FrontendStructureTests(unittest.TestCase):
         self.assertIn('id="modelSelect"', self.index)
         self.assertIn('id="metricsPanel"', self.index)
         self.assertIn('id="metricsContent"', self.index)
+        self.assertIn('id="workbenchView"', self.index)
+        self.assertIn('id="workbenchTab"', self.index)
 
     def test_sanitizer_blocks_executable_content(self):
         source = (
@@ -143,6 +148,7 @@ class FrontendStaticRouteTests(unittest.TestCase):
             "js/state.js",
             "js/table-html.js",
             "js/theme.js",
+            "js/workbench.js",
         ):
             response = client.get(f"/frontend/{relative_path}")
             self.assertEqual(response.status_code, 200, relative_path)

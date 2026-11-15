@@ -33,6 +33,7 @@ import {
   saveCache,
   state,
 } from "./state.js";
+import { initWorkbench } from "./workbench.js";
 
 Object.assign(window, {
   switchResultView,
@@ -509,6 +510,7 @@ setupUpload();
 setupResizePanel();
 setupEvents();
 setupModelPicker();
+initWorkbench();
 pollModelStatus();
 loadModelOptions();
 loadMetricsPanel();
@@ -519,6 +521,10 @@ if (loadCache()) {
   if (state.allPagesData) {
     document.getElementById("jsonAllTab").style.display = "";
   }
+}
+
+if (window.location.hash === "#workbench") {
+  switchResultView("workbench");
 }
 
 document.documentElement.dataset.frontendReady = "true";

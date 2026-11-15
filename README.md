@@ -209,6 +209,31 @@ curl http://localhost:3003/api/evaluations/stage3-smoke/metrics
 页面底部指标区读取最新实验报告，显示检出率、平均单元格数、P50/P95 和
 吞吐量，并标明评测模型、数据集版本和结构指标状态。没有报告时显示明确占位。
 
+### 单样本评测工作台
+
+页面右上视图切换中的「样本评测」可以浏览 FinTabNet 测试样本，查看原图，
+使用当前模型重新识别，并查看预测 HTML/源码和无真值状态。
+
+```bash
+curl http://localhost:3003/api/datasets
+curl "http://localhost:3003/api/datasets/fintabnet-test/samples?offset=0&limit=20"
+```
+
+默认数据集路径为：
+
+```text
+D:\dataset\fintabnet-pubtables-full\test
+```
+
+可通过环境变量覆盖：
+
+```bash
+export PP_FINTABNET_PATH=/path/to/fintabnet/test
+```
+
+也可直接打开 `http://localhost:3003/#workbench`。FinTabNet 当前没有单元格或
+HTML 结构真值，工作台会明确显示“无结构真值”，不会生成伪对比。
+
 ### 基线检查
 
 纯函数回归测试：

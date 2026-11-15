@@ -39,7 +39,9 @@ PDF 上传
 - `app/engines/tablemagic.py` — PP-TableMagic V2 适配器
 - `app/engines/rapid_table.py` — RapidTable 适配器
 - `app/datasets/fintabnet.py` — FinTabNet Parquet 分片与样本
+- `app/datasets/registry.py` — 数据集路径注册和可用状态
 - `app/evaluation/runner.py` — 逐样本实验、结果存储和断点续跑
+- `app/evaluation/workbench.py` — 单样本浏览和重新识别
 - `app/evaluation/metrics.py` — 基础指标、百分位和可选真值指标
 - `scripts/run_fintabnet.py` — FinTabNet 批量运行 CLI
 - `scripts/compute_metrics.py` — 从逐样本结果重算指标
@@ -51,6 +53,7 @@ PDF 上传
 - `frontend/js/api.js` — FastAPI 请求
 - `frontend/js/results.js` — JSON、区域、表格、树形和目录渲染
 - `frontend/js/table-html.js` — 表格 HTML 白名单清理
+- `frontend/js/workbench.js` — 单样本评测工作台
 - `frontend/js/interactions.js` — 双向高亮联动
 - `frontend/js/overlay.js` — 图片覆盖层
 - `app/evaluation/reports.py` — 只读实验指标报告 API
@@ -151,6 +154,7 @@ pred_html 不保留换行。用 `table_ocr_pred.rec_texts` + `rec_boxes` 按 Y �
 - HTML 中保留 `onclick` 入口，`app.js` 启动时显式绑定到 `window`；
   修改事件函数名时需要同步这两处
 - 模型 HTML 必须先经过 `sanitizeTableHtml()`；禁止直接插入模型返回原文
+- FinTabNet 工作台真值状态为 `not_available`，不得用 OCR 词框伪造单元格真值
 - 批量实验写入 `experiments/`，该目录和数据集一样不进入 Git；续跑以
   `results.jsonl` 中每个 `sample_id` 的最后一条结果为准
 - `metrics.json` 必须只从逐样本结果重算；无真值指标写 `null` 和明确状态，
