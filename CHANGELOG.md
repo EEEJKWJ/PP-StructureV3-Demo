@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-11-15
+
+### refactor: 拆分版面与 OCR 服务
+- 新增 `app/services/layout.py`，集中 PP-DocLayoutV3 的加载状态、设备选择、
+  版面检测、重叠框过滤和阅读顺序排序
+- 新增 `app/services/ocr.py`，集中 PP-OCRv5 模型下载、引擎缓存、区域 OCR
+  和文字框去重
+- `server.py` 保留原有版面/OCR 函数名作为兼容入口，API 路径和响应字段不变
+- 明确先导入版面服务中的 PyTorch，再加载表格服务中的 Paddle
+- 新增 6 项版面、OCR 和模型状态回归测试，全部 16 项测试通过
+- CUDA 12.9 同进程验证通过
+- 已有页面图片的 PP-DocLayoutV3 模型加载和版面检测通过
+- FinTabNet 前 3 条样本表格检出 3/3，均返回 HTML
+
 ## 2026-04-16
 
 ### fix: OCR 字符重复修复 — 后处理去重（不改模型参数）

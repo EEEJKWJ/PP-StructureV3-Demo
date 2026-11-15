@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import tempfile
 import unittest
@@ -6,6 +7,8 @@ from pathlib import Path
 import fitz
 import server
 from app.services.document import DocumentService
+from app.services.layout import LayoutService
+from app.services.ocr import OCRService
 from app.services.table import TableService
 
 
@@ -118,6 +121,99 @@ class StructureTests(unittest.TestCase):
         self.assertEqual(structured["content"][0]["headers"], ["名称", "数量"])
         self.assertEqual(structured["content"][0]["rows"], [{"名称": "苹果", "数量": "2"}])
         self.assertIn("<td>苹果</td>", structured["content"][0]["html"])
+
+
+class LayoutAndOcrServiceTests(unittest.TestCase):
+    def test_reading_order_groups_nearby_rows_and_sorts_columns(self):
+        blocks = [
+            {"bbox": [210, 5, 300, 20], "label": "text"},
+            {"bbox": [100, 100, 200, 120], "label": "table"},
+            {"bbox": [10, 0, 90, 20], "label": "paragraph_title"},
+        ]
+
+        ordered = LayoutService.sort_reading_order(blocks, y_tolerance=30)
+
+        self.assertEqual(
+            [block["label"] for block in ordered],
+            ["paragraph_title", "text", "table"],
+        )
+
+    def test_layout_iou_matches_existing_geometry(self):
+        self.assertEqual(LayoutService.iou([0, 0, 10, 10], [0, 0, 10, 10]), 1)
+        self.assertEqual(LayoutService.iou([0, 0, 10, 10], [20, 20, 30, 30]), 0)
+        self.assertAlmostEqual(
+            LayoutService.iou([0, 0, 10, 10], [5, 0, 15, 10]),
+            1 / 3,
+        )
+
+    def test_ocr_nms_prefers_longer_overlapping_text(self):
+        lines = [
+            {"text": "第一章", "bbox": [0, 0, 100, 20]},
+            {"text": "第一章牙体组织", "bbox": [0, 0, 100, 20]},
+            {"text": "第二章", "bbox": [0, 40, 100, 60]},
+        ]
+
+        kept = OCRService.nms_lines(lines)
+
+        self.assertEqual(
+            [line["text"] for line in kept],
+            ["第一章牙体组织", "第二章"],
+        )
+
+    def test_ocr_merge_removes_suffix_prefix_overlap(self):
+        lines = [
+            {"text": "牙体组织", "bbox": [0, 0, 100, 20]},
+            {"text": "织的构成", "bbox": [90, 1, 190, 21]},
+        ]
+
+        merged = OCRService.merge_suffix_prefix_lines(lines)
+
+        self.assertEqual(len(merged), 1)
+        self.assertEqual(merged[0]["text"], "牙体组织的构成")
+        self.assertEqual(merged[0]["bbox"], [0, 0, 190, 21])
+
+    def test_ocr_status_reports_server_master_then_mobile(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            model_dir = Path(temp_dir)
+            service = OCRService(
+                logging.getLogger("test-ocr"),
+                model_dir=model_dir,
+            )
+            self.assertEqual(
+                service.status(),
+                {"available": False, "model": ""},
+            )
+
+            (model_dir / "ppocr5_mobile_det.onnx").touch()
+            self.assertEqual(
+                service.status(),
+                {"available": True, "model": "mobile"},
+            )
+
+            (model_dir / "ppocr5_server_det.onnx").touch()
+            self.assertEqual(
+                service.status(),
+                {"available": True, "model": "server"},
+            )
+
+    def test_model_status_keeps_existing_contract(self):
+        status = asyncio.run(server.model_status())
+
+        self.assertEqual(
+            set(status),
+            {
+                "status",
+                "error",
+                "ocr_available",
+                "ocr_model",
+                "gpu",
+                "gpu_name",
+                "table_engine",
+            },
+        )
+        self.assertIn(status["status"], {"loading", "ready", "error"})
+        self.assertIsInstance(status["ocr_available"], bool)
+        self.assertIsInstance(status["gpu"], bool)
 
 
 class DocumentServiceTests(unittest.TestCase):

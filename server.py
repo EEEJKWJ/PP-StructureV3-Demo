@@ -9,7 +9,6 @@
   · 降级方案：RapidTable (SLANet_plus ONNX)"""
 
 import re
-import time
 import uuid
 import shutil
 import logging
@@ -17,12 +16,12 @@ import threading
 from pathlib import Path
 
 import fitz  # PyMuPDF
-import torch
 from PIL import Image
-from transformers import RTDetrImageProcessor, AutoModelForObjectDetection
 from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import FileResponse, HTMLResponse
 
+from app.services.layout import LayoutService
+from app.services.ocr import OCRService
 from app.services.document import DocumentService
 from app.services.table import TableService
 
@@ -34,280 +33,80 @@ app = FastAPI(title="PP-StructureV3 Demo")
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
 
-# ── 版面检测模型 ──────────────────────────────────────────────────
-_MODEL_NAME = "PaddlePaddle/PP-DocLayoutV3_safetensors"
-_MODEL_DIR = Path("model")
-_THRESHOLD = 0.35
-_processor = None
-_model = None
-_model_status = "loading"  # loading | ready | error
-_model_error = ""
+_layout_service = LayoutService(log)
+_ocr_service = OCRService(log)
 
 
+# ── 版面与 OCR 兼容入口 ────────────────────────────────────────────
 def _load_model():
-    global _processor, _model, _model_status, _model_error
-    try:
-        t0 = time.time()
-        local = _MODEL_DIR / "config.json"
-
-        if local.exists():
-            src = str(_MODEL_DIR)
-            log.info(f"从本地加载版面模型: {src}")
-        else:
-            src = _MODEL_NAME
-            log.info(f"首次启动，从 HuggingFace 下载 {src} ...")
-
-        _processor = RTDetrImageProcessor.from_pretrained(src)
-        _model = AutoModelForObjectDetection.from_pretrained(src)
-
-        if not local.exists():
-            _MODEL_DIR.mkdir(parents=True, exist_ok=True)
-            _processor.save_pretrained(str(_MODEL_DIR))
-            _model.save_pretrained(str(_MODEL_DIR))
-            log.info(f"版面模型已保存到 {_MODEL_DIR}/")
-
-        if torch.cuda.is_available():
-            _model.to("cuda")
-        _model.eval()
-        _model_status = "ready"
-        log.info(f"版面模型加载完成: {time.time() - t0:.2f}s")
-    except Exception as e:
-        _model_status = "error"
-        _model_error = str(e)
-        log.error(f"版面模型加载失败: {e}")
+    """兼容入口：版面模型加载由 LayoutService 提供。"""
+    return _layout_service.load()
 
 
 def _ensure_model():
-    if _model is None:
-        raise RuntimeError("模型尚未加载完成，请稍候")
+    """兼容入口：版面模型就绪检查由 LayoutService 提供。"""
+    return _layout_service.ensure_ready()
 
 
-# ── OCR 模型（PP-OCRv5 ONNX）─────────────────────────────────────
-_OCR_DIR = Path("model/ocr")
-_ocr_engine = None
-_ocr_model_type = ""  # "server" | "mobile" | ""
+def _sort_reading_order(blocks: list[dict], y_tolerance: int = 30) -> list[dict]:
+    """兼容入口：阅读顺序排序由 LayoutService 提供。"""
+    return _layout_service.sort_reading_order(blocks, y_tolerance)
 
-# HuggingFace 下载映射：(repo_id, remote_filename) → local_filename
-_OCR_MODELS = {
-    "ppocr5_server_det.onnx": ("marsena/paddleocr-onnx-models", "PP-OCRv5_server_det_infer.onnx"),
-    "ppocr5_server_rec.onnx": ("marsena/paddleocr-onnx-models", "PP-OCRv5_server_rec_infer.onnx"),
-    "ppocr5_cls.onnx":        ("SWHL/RapidOCR", "PP-OCRv1/ch_ppocr_mobile_v2.0_cls_infer.onnx"),
-    "ppocr5_dict.txt":        ("AXERA-TECH/PPOCR_v5", "ppocrv5_dict.txt"),
-}
+
+def _iou(a, b):
+    """兼容入口：版面框 IoU 由 LayoutService 提供。"""
+    return _layout_service.iou(a, b)
+
+
+def detect_layout(image_path: str) -> list[dict]:
+    """兼容入口：版面检测由 LayoutService 提供。"""
+    return _layout_service.detect(image_path)
 
 
 def _download_ocr_models():
-    """Download OCR models from HuggingFace if not present."""
-    from huggingface_hub import hf_hub_download
-
-    _OCR_DIR.mkdir(parents=True, exist_ok=True)
-    for local_name, (repo_id, remote_name) in _OCR_MODELS.items():
-        local_path = _OCR_DIR / local_name
-        if local_path.exists():
-            continue
-        log.info(f"下载 OCR 模型: {local_name} ← {repo_id}/{remote_name}")
-        downloaded = hf_hub_download(repo_id=repo_id, filename=remote_name)
-        # Copy to local dir with our naming convention
-        import shutil as _shutil
-        _shutil.copy2(downloaded, str(local_path))
-        log.info(f"OCR 模型已保存: {local_path}")
+    """兼容入口：OCR 模型下载由 OCRService 提供。"""
+    return _ocr_service.download_models()
 
 
 def _get_ocr():
-    global _ocr_engine, _ocr_model_type
-    if _ocr_engine is not None:
-        return _ocr_engine
-
-    # Auto-download if missing
-    if not (_OCR_DIR / "ppocr5_server_det.onnx").exists():
-        try:
-            _download_ocr_models()
-        except Exception as e:
-            log.error(f"OCR 模型下载失败: {e}")
-
-    cls = str(_OCR_DIR / "ppocr5_cls.onnx")
-    dic = str(_OCR_DIR / "ppocr5_dict.txt")
-    use_gpu = torch.cuda.is_available()
-
-    # 优先 server 版（精度高），没有则 mobile 版
-    if (_OCR_DIR / "ppocr5_server_det.onnx").exists():
-        det = str(_OCR_DIR / "ppocr5_server_det.onnx")
-        rec = str(_OCR_DIR / "ppocr5_server_rec.onnx")
-        _ocr_model_type = "server"
-        log.info(f"使用 PP-OCRv5 server 版模型 (GPU={use_gpu})")
-    elif (_OCR_DIR / "ppocr5_mobile_det.onnx").exists():
-        det = str(_OCR_DIR / "ppocr5_mobile_det.onnx")
-        rec = str(_OCR_DIR / "ppocr5_mobile_rec.onnx")
-        _ocr_model_type = "mobile"
-        log.info("使用 PP-OCRv5 mobile 版模型")
-    else:
-        log.warning("OCR 模型未找到，扫描件将无法识别文字")
-        return None
-
-    from ppocr5 import simple_ppocr5
-    _ocr_engine = simple_ppocr5(
-        ppocr5_onnx_det=det, ppocr5_onnx_cls=cls,
-        ppocr5_onnx_rec=rec, ppcor5_dict=dic, use_gpu=use_gpu,
-    )
-    # 保持默认参数（unclip=1.8, box_thresh=0.5）以避免检测框过紧切掉笔画复杂的字
-    log.info(f"OCR 模型加载完成 (GPU={use_gpu})")
-    return _ocr_engine
+    """兼容入口：OCR 引擎由 OCRService 提供。"""
+    return _ocr_service.get_engine()
 
 
-# ── 按区域 OCR：对每个版面区域单独裁剪识别 ──────────────────────
 def ocr_blocks(image_path: str, blocks: list[dict]) -> dict[int, list[dict]]:
-    """对每个版面区域单独裁剪 OCR，避免多栏混排。
-    返回 {block_index: [{"text":..., "bbox":...}]}
-    bbox 是图片全局坐标（裁剪坐标 + 区域偏移）。
-    """
-    import cv2
-    engine = _get_ocr()
-    if engine is None:
-        return {}
-    img = cv2.imread(image_path)
-    if img is None:
-        return {}
-
-    result = {}
-    for idx, block in enumerate(blocks):
-        label = block["label"]
-        # 只对需要文字的区域做 OCR
-        if label in ("number", "figure", "table"):
-            continue
-        x1, y1, x2, y2 = block["bbox"]
-        # 适度扩大裁剪范围，避免边缘字符被裁切
-        pad = 5
-        cx1 = max(0, x1 - pad)
-        cy1 = max(0, y1 - pad)
-        cx2 = min(img.shape[1], x2 + pad)
-        cy2 = min(img.shape[0], y2 + pad)
-        crop = img[cy1:cy2, cx1:cx2]
-        if crop.size == 0:
-            continue
-
-        engine.run(crop)
-        if not engine.results:
-            continue
-
-        lines = []
-        for r in engine.results:
-            pos = r["rec_pos"]
-            # 转换为全局坐标
-            bbox = [
-                int(pos[0][0]) + cx1, int(pos[0][1]) + cy1,
-                int(pos[2][0]) + cx1, int(pos[2][1]) + cy1,
-            ]
-            lines.append({"text": r["text"], "bbox": bbox})
-
-        # NMS 去重：对重叠检测框只保留面积最大的（包含最完整文字）
-        lines = _nms_ocr_lines(lines)
-        # 文字级去重：合并同一行相邻 bbox 的前后缀重叠
-        lines = _merge_suffix_prefix_lines(lines)
-
-        lines.sort(key=lambda l: (l["bbox"][1], l["bbox"][0]))
-        result[idx] = lines
-        log.info(f"  区域 #{idx}({label}) OCR: {len(lines)} 行")
-
-    return result
-
-
-def _nms_ocr_lines(lines: list[dict], iou_threshold: float = 0.5,
-                   contain_threshold: float = 0.7) -> list[dict]:
-    """对 OCR 检测行做 NMS 去重。
-    规则：两个框 IoU>阈值 或 一个框被另一个包含 >阈值 时，保留文字较长的那一个。
-    """
-    if len(lines) <= 1:
-        return lines
-
-    # 按文字长度降序（长文字优先，因为包含更完整信息）
-    sorted_lines = sorted(lines, key=lambda l: -len(l["text"]))
-    kept = []
-    for line in sorted_lines:
-        drop = False
-        for k in kept:
-            if _iou(line["bbox"], k["bbox"]) > iou_threshold:
-                drop = True
-                break
-            # 检查一个框是否大部分被另一个包含
-            if _contain_ratio(line["bbox"], k["bbox"]) > contain_threshold:
-                drop = True
-                break
-        if not drop:
-            kept.append(line)
-    return kept
-
-
-def _contain_ratio(a: list, b: list) -> float:
-    """a 被 b 包含的比例（a∩b / a 的面积）"""
-    x1 = max(a[0], b[0])
-    y1 = max(a[1], b[1])
-    x2 = min(a[2], b[2])
-    y2 = min(a[3], b[3])
-    inter = max(0, x2 - x1) * max(0, y2 - y1)
-    if inter == 0:
-        return 0
-    area_a = (a[2] - a[0]) * (a[3] - a[1])
-    if area_a == 0:
-        return 0
-    return inter / area_a
-
-
-def _merge_suffix_prefix_lines(lines: list[dict], max_overlap: int = 6) -> list[dict]:
-    """合并同一行内相邻 bbox 的字符重叠。
-    规则：两个 line 同一行（y 中心差 < 15px）且水平相邻（左 bbox 右边缘与右 bbox 左边缘在 bbox 宽度内重叠），
-    若左 line 的后缀与右 line 的前缀相同，合并并去重重叠部分。
-    """
-    if len(lines) <= 1:
-        return lines
-
-    # 先按 (y, x) 排序
-    sorted_lines = sorted(lines, key=lambda l: (l["bbox"][1], l["bbox"][0]))
-
-    merged = []
-    for line in sorted_lines:
-        if not merged:
-            merged.append(dict(line))
-            continue
-
-        prev = merged[-1]
-        prev_y_center = (prev["bbox"][1] + prev["bbox"][3]) / 2
-        cur_y_center = (line["bbox"][1] + line["bbox"][3]) / 2
-        same_row = abs(prev_y_center - cur_y_center) < 15
-
-        if same_row:
-            # 检查水平重叠（两个 bbox 的 x 有交集）
-            x_overlap = min(prev["bbox"][2], line["bbox"][2]) - max(prev["bbox"][0], line["bbox"][0])
-            if x_overlap > 0:
-                # 寻找前后缀重叠
-                prev_text = prev["text"]
-                cur_text = line["text"]
-                overlap_len = 0
-                max_k = min(len(prev_text), len(cur_text), max_overlap)
-                for k in range(max_k, 0, -1):
-                    if prev_text.endswith(cur_text[:k]):
-                        overlap_len = k
-                        break
-                if overlap_len > 0:
-                    # 合并：保留 prev + cur 去掉前缀
-                    new_text = prev_text + cur_text[overlap_len:]
-                    new_bbox = [
-                        min(prev["bbox"][0], line["bbox"][0]),
-                        min(prev["bbox"][1], line["bbox"][1]),
-                        max(prev["bbox"][2], line["bbox"][2]),
-                        max(prev["bbox"][3], line["bbox"][3]),
-                    ]
-                    prev["text"] = new_text
-                    prev["bbox"] = new_bbox
-                    continue
-        merged.append(dict(line))
-    return merged
+    """兼容入口：区域 OCR 由 OCRService 提供。"""
+    return _ocr_service.recognize_blocks(image_path, blocks)
 
 
 def ocr_single_block(image_path: str, block: dict) -> list[dict]:
-    """对单个版面区域做 OCR，返回 [{"text":..., "bbox":...}]。用于文字层乱码回退。"""
-    result = ocr_blocks(image_path, [block])
-    return result.get(0, [])
+    """兼容入口：单区域 OCR 由 OCRService 提供。"""
+    return _ocr_service.recognize_block(image_path, block)
 
+
+def _nms_ocr_lines(
+    lines: list[dict],
+    iou_threshold: float = 0.5,
+    contain_threshold: float = 0.7,
+) -> list[dict]:
+    """兼容入口：OCR 行去重由 OCRService 提供。"""
+    return _ocr_service.nms_lines(
+        lines,
+        iou_threshold,
+        contain_threshold,
+    )
+
+
+def _contain_ratio(a: list, b: list) -> float:
+    """兼容入口：OCR 包含比例由 OCRService 提供。"""
+    return _ocr_service.contain_ratio(a, b)
+
+
+def _merge_suffix_prefix_lines(
+    lines: list[dict],
+    max_overlap: int = 6,
+) -> list[dict]:
+    """兼容入口：OCR 前后缀合并由 OCRService 提供。"""
+    return _ocr_service.merge_suffix_prefix_lines(lines, max_overlap)
 
 
 # ── 表格结构识别（扫描件）── PP-TableMagic V2 ────────────────────
@@ -497,21 +296,15 @@ async def startup_event():
 
 @app.get("/api/model-status")
 async def model_status():
-    ocr_available = (_OCR_DIR / "ppocr5_server_det.onnx").exists() or (_OCR_DIR / "ppocr5_mobile_det.onnx").exists()
-    if _ocr_model_type:
-        ocr_model = _ocr_model_type
-    elif (_OCR_DIR / "ppocr5_server_det.onnx").exists():
-        ocr_model = "server"
-    elif (_OCR_DIR / "ppocr5_mobile_det.onnx").exists():
-        ocr_model = "mobile"
-    else:
-        ocr_model = ""
-    gpu = torch.cuda.is_available()
-    gpu_name = torch.cuda.get_device_name(0) if gpu else ""
+    ocr_status = _ocr_service.status()
+    gpu = _layout_service.gpu_info()
     return {
-        "status": _model_status, "error": _model_error,
-        "ocr_available": ocr_available, "ocr_model": ocr_model,
-        "gpu": gpu, "gpu_name": gpu_name,
+        "status": _layout_service.status,
+        "error": _layout_service.error,
+        "ocr_available": ocr_status["available"],
+        "ocr_model": ocr_status["model"],
+        "gpu": gpu["available"],
+        "gpu_name": gpu["name"],
         "table_engine": _table_engine_type or "none",
     }
 
@@ -527,97 +320,6 @@ def ensure_page_image(doc_dir: Path, page_num: int) -> Path:
     """兼容入口：页面渲染由 DocumentService 提供。"""
     return _document_service.ensure_page_image(doc_dir, page_num)
 
-
-
-def _sort_reading_order(blocks: list[dict], y_tolerance: int = 30) -> list[dict]:
-    """按阅读顺序排序：将 y 坐标相近的 block 分到同一行，行内按 x 排序。
-    解决双栏布局中右列 y 略小于左列导致排序错误的问题。
-    """
-    if not blocks:
-        return blocks
-
-    sorted_by_y = sorted(blocks, key=lambda b: b["bbox"][1])
-
-    rows = []
-    current_row = [sorted_by_y[0]]
-    row_y = sorted_by_y[0]["bbox"][1]
-
-    for b in sorted_by_y[1:]:
-        if b["bbox"][1] - row_y <= y_tolerance:
-            current_row.append(b)
-        else:
-            rows.append(current_row)
-            current_row = [b]
-            row_y = b["bbox"][1]
-    rows.append(current_row)
-
-    result = []
-    for row in rows:
-        row.sort(key=lambda b: b["bbox"][0])
-        result.extend(row)
-    return result
-
-
-# ── 版面检测 ───────────────────────────────────────────────────────
-def detect_layout(image_path: str) -> list[dict]:
-    _ensure_model()
-    img = Image.open(image_path).convert("RGB")
-    device = next(_model.parameters()).device
-
-    inputs = _processor(images=img, return_tensors="pt")
-    inputs = {k: v.to(device) for k, v in inputs.items()}
-
-    with torch.no_grad():
-        outputs = _model(**inputs)
-
-    target_sizes = torch.tensor([img.size[::-1]], device=device)
-    results = _processor.post_process_object_detection(
-        outputs, target_sizes=target_sizes, threshold=_THRESHOLD
-    )[0]
-
-    id2label = _model.config.id2label
-    blocks = []
-    for i, (score, label_id, box) in enumerate(
-        zip(results["scores"], results["labels"], results["boxes"])
-    ):
-        blocks.append({
-            "bbox": [round(c) for c in box.tolist()],
-            "label": id2label[label_id.item()],
-            "score": round(score.item(), 3),
-            "order": i,
-        })
-
-    blocks = [b for b in blocks if b["label"] != "number"]
-
-    blocks.sort(key=lambda b: -b["score"])
-    kept = []
-    for b in blocks:
-        if any(_iou(b["bbox"], k["bbox"]) > 0.5 for k in kept):
-            continue
-        kept.append(b)
-    blocks = kept
-
-    blocks = _sort_reading_order(blocks)
-    for i, b in enumerate(blocks):
-        b["order"] = i
-
-    log.info(f"检测到 {len(blocks)} 个区域")
-    for b in blocks:
-        log.info(f"  [{b['order']}] {b['label']:12s} score={b['score']:.3f} bbox={b['bbox']}")
-    return blocks
-
-
-def _iou(a, b):
-    x1 = max(a[0], b[0])
-    y1 = max(a[1], b[1])
-    x2 = min(a[2], b[2])
-    y2 = min(a[3], b[3])
-    inter = max(0, x2 - x1) * max(0, y2 - y1)
-    if inter == 0:
-        return 0
-    area_a = (a[2] - a[0]) * (a[3] - a[1])
-    area_b = (b[2] - b[0]) * (b[3] - b[1])
-    return inter / (area_a + area_b - inter)
 
 
 # ── 表格单元格提取（PyMuPDF）──────────────────────────────────────

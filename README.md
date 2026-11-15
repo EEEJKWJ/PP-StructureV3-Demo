@@ -19,7 +19,8 @@ PDF 文档版面结构化分析工具。上传 PDF 后自动检测版面区域�
 
 ### 表格结构
 - **文本型 PDF**：PyMuPDF 提取单元格级结构（行、列、合并单元格、文字内容）
-- **扫描件 PDF**：RapidTable (SLANet_plus) 识别表格行列结构，输出 HTML 表格
+- **扫描件 PDF**：PP-TableMagic V2 完整产线识别表格，输出单元格和 HTML 表格
+- PP-TableMagic 不可用时自动降级到 RapidTable (SLANet_plus)
 - 表格支持「网格」和「树形」两种可视化视图
 
 ### 目录解析
@@ -47,7 +48,7 @@ PDF 文档版面结构化分析工具。上传 PDF 后自动检测版面区域�
 |------|------|
 | 版面检测 | [PP-DocLayoutV3](https://huggingface.co/PaddlePaddle/PP-DocLayoutV3_safetensors) (transformers + PyTorch) |
 | OCR 引擎 | [PP-OCRv5](https://github.com/PaddlePaddle/PaddleOCR) ONNX (onnxruntime) |
-| 表格结构识别 | [RapidTable](https://github.com/RapidAI/RapidTable) (SLANet_plus ONNX) |
+| 表格结构识别 | PP-TableMagic V2（PaddlePaddle），降级 RapidTable |
 | PDF 处理 | PyMuPDF（渲染 + 文字提取 + 表格提取）|
 | 后端 | FastAPI |
 | 前端 | 单文件 HTML（原生 JS，无框架依赖）|
@@ -177,7 +178,8 @@ python scripts/check_baseline.py --gpu --limit 3
 
 ```
 ├── launch_pp_structurev3.py # Python 启动器（自动切换项目目录）
-├── server.py           # FastAPI 后端（版面检测 + 文本提取 + 结构化输出）
+├── server.py           # FastAPI 应用、路由和兼容入口
+├── app/services/       # 文档、版面、OCR 和表格服务
 ├── index.html          # 单文件前端（上传 + 可视化 + 双向联动）
 ├── ppocr5.py           # PP-OCRv5 ONNX 推理引擎
 ├── requirements.txt    # Python 依赖
