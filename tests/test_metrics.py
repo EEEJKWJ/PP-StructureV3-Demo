@@ -206,7 +206,7 @@ class AggregateMetricTests(unittest.TestCase):
             "not_available_no_ground_truth",
         )
 
-    def test_html_truth_marks_teds_as_not_implemented(self):
+    def test_html_truth_without_prediction_html_is_flagged(self):
         report = compute_metrics([
             result(
                 "s:0",
@@ -219,12 +219,55 @@ class AggregateMetricTests(unittest.TestCase):
 
         self.assertEqual(
             report["metric_status"]["teds"],
-            "not_implemented",
+            "missing_prediction_html",
         )
         self.assertEqual(
             report["ground_truth_coverage"]["html_samples"],
             1,
         )
+
+    def test_teds_is_aggregated_from_html(self):
+        prediction = (
+            "<table><tr><td>A</td><td>Wrong</td></tr></table>"
+        )
+        truth = "<table><tr><td>A</td><td>B</td></tr></table>"
+        item = result(
+            "s:0",
+            ground_truth={"cells": [], "html": truth},
+        )
+        item["html"] = prediction
+
+        report = compute_metrics([item])
+
+        self.assertLess(report["metrics"]["teds"], 1)
+        self.assertEqual(report["metrics"]["teds_s"], 1)
+        self.assertEqual(
+            report["metric_status"]["teds"],
+            "available",
+        )
+        self.assertEqual(
+            report["teds_coverage"]["available"],
+            1,
+        )
+
+    def test_teds_can_be_skipped_with_explicit_status(self):
+        item = result(
+            "s:0",
+            ground_truth={
+                "cells": [],
+                "html": "<table><tr><td>A</td></tr></table>",
+            },
+        )
+        item["html"] = "<table><tr><td>A</td></tr></table>"
+
+        report = compute_metrics([item], include_teds=False)
+
+        self.assertIsNone(report["metrics"]["teds"])
+        self.assertEqual(
+            report["metric_status"]["teds_s"],
+            "skipped",
+        )
+        self.assertEqual(report["teds_coverage"]["skipped"], 1)
 
     def test_store_recomputes_metrics_and_syncs_summary(self):
         with tempfile.TemporaryDirectory() as temp_dir:

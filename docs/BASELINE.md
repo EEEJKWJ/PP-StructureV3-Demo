@@ -18,6 +18,7 @@
 - FinTabNet.c XML 预处理位于 `app/datasets/preprocessing.py`
 - 批量实验和断点续跑位于 `app/evaluation/runner.py`
 - 指标重算位于 `app/evaluation/metrics.py`
+- TEDS/S-TEDS 树编辑距离位于 `app/evaluation/teds.py`
 - 前端样式和 ES Modules 位于 `frontend/`
 
 ## 2. 运行环境

@@ -21,3 +21,4 @@ rapid_table>=3.0.0
 paddlepaddle-gpu==3.4.0
 paddleocr[doc-parser]==3.7.0
 pyarrow>=18.0.0
+apted==1.0.3

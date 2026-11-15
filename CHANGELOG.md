@@ -2,6 +2,17 @@
 
 ## 2026-11-15
 
+### feat: TEDS 与 S-TEDS
+- 新增规范 HTML 表格树解析，忽略可选包裹和格式标签差异
+- 使用 `apted==1.0.3` 计算有序树编辑距离
+- 同时输出 TEDS（结构+文本）和 S-TEDS（结构）
+- 逐样本 `html_metrics`、聚合指标、覆盖率和解析状态已接入报告
+- `compute_metrics.py --skip-teds` 支持快速重算
+- 新增 14 项 TEDS、规范化和跳过路径测试；全部 106 项测试通过
+- TableMagic test 前 100 条：TEDS 0.3705、S-TEDS 0.8259，
+  覆盖率 100/100、解析失败 0
+- 20 条已有结果单独重算 TEDS 用时约 9.5 秒；全量单进程预计约 3–4 小时
+
 ### feat: FinTabNet.c 结构预处理与真实指标
 - 新增 FinTabNet.c XML 预处理，将行列框、跨单元格框和词框规范化为 cells/HTML
 - 新增 rows/cols 排序、spanning-cell 映射、文本归属和换行恢复

@@ -198,6 +198,34 @@ python scripts/run_fintabnet.py \
 实验目录断点续跑。结构真值可用时，报告会计算单元格 IoU、文本召回、CER/WER
 和结构邻接关系 Precision/Recall/F1。
 
+### TEDS 与 S-TEDS
+
+结构真值和预测 HTML 都存在时，实验自动计算：
+
+- `teds_s`：忽略文本，只比较行列和合并单元格结构。
+- `teds`：同时比较结构和单元格文本。
+
+实现使用 `apted==1.0.3` 的有序树编辑距离，并对可选 `thead/tbody`、
+格式标签、大小写和空白做统一规范化。
+
+对已有结果快速重算：
+
+```bash
+python scripts/compute_metrics.py \
+  --experiment-dir experiments/cstruct-eval-100
+```
+
+跳过较慢的 TEDS：
+
+```bash
+python scripts/compute_metrics.py \
+  --experiment-dir experiments/cstruct-eval-100 \
+  --skip-teds
+```
+
+当前 TableMagic 前 100 条测试样本结果：TEDS 0.3705、S-TEDS 0.8259。
+实测单进程全量 9,289 条约需 3–4 小时，可通过实验目录续跑。
+
 ### 模型注册与切换
 
 默认清单为 `configs/models/registry.json`，包含 PP-TableMagic V2 和

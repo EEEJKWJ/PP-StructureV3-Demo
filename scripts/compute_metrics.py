@@ -22,11 +22,18 @@ def main(argv=None):
         required=True,
         help="包含 experiment.json 和 results.jsonl 的实验目录",
     )
+    parser.add_argument(
+        "--skip-teds",
+        action="store_true",
+        help="跳过 TEDS/S-TEDS，仅计算其他指标",
+    )
     args = parser.parse_args(argv)
 
     logger = logging.getLogger("pp-struct-metrics")
     store = ExperimentStore(args.experiment_dir, logger)
-    report = store.write_metrics_report()
+    report = store.write_metrics_report(
+        include_teds=not args.skip_teds,
+    )
     print(json.dumps(report, ensure_ascii=False, indent=2))
     print(f"metrics_file={store.metrics_path}")
     return 0

@@ -4,6 +4,8 @@ import math
 import re
 from datetime import datetime, timezone
 
+from app.evaluation.teds import calculate_html_metrics
+
 
 def utc_now():
     return datetime.now(timezone.utc).isoformat()
@@ -234,7 +236,7 @@ def _round_optional(value, digits=4):
     return round(value, digits) if value is not None else None
 
 
-def compute_metrics(results, experiment=None):
+def compute_metrics(results, experiment=None, include_teds=True):
     """从结果字典或列表生成完整指标报告。"""
     if isinstance(results, dict):
         results = list(results.values())
@@ -285,6 +287,10 @@ def compute_metrics(results, experiment=None):
 
     grounded_samples = []
     html_truth_count = 0
+    html_metrics = []
+    html_parse_errors = 0
+    html_missing_predictions = 0
+    teds_skipped = 0
     for result in results:
         truth = result.get("ground_truth") or {}
         gt_cells = truth.get("cells") or []
@@ -297,6 +303,21 @@ def compute_metrics(results, experiment=None):
                 grounded_samples.append(metric)
         if truth.get("html"):
             html_truth_count += 1
+            if not include_teds:
+                teds_skipped += 1
+                continue
+            metric = result.get("html_metrics")
+            if not isinstance(metric, dict):
+                metric = calculate_html_metrics(
+                    result.get("html"),
+                    truth.get("html"),
+                )
+            if metric.get("status") == "available":
+                html_metrics.append(metric)
+            elif metric.get("status") == "parse_error":
+                html_parse_errors += 1
+            elif metric.get("status") == "missing_prediction_html":
+                html_missing_predictions += 1
 
     cell_mean_iou = _mean_defined(
         [item["mean_best_iou"] for item in grounded_samples]
@@ -317,6 +338,12 @@ def compute_metrics(results, experiment=None):
     )
     edge_f1 = _mean_defined(
         [item["structure_edge_f1"] for item in grounded_samples]
+    )
+    teds_values = _mean_defined(
+        [item["teds"] for item in html_metrics]
+    )
+    teds_s_values = _mean_defined(
+        [item["teds_s"] for item in html_metrics]
     )
 
     detection_rate = (
@@ -355,8 +382,8 @@ def compute_metrics(results, experiment=None):
         "structure_edge_precision": _round_optional(edge_precision),
         "structure_edge_recall": _round_optional(edge_recall),
         "structure_edge_f1": _round_optional(edge_f1),
-        "teds": None,
-        "teds_s": None,
+        "teds": _round_optional(teds_values),
+        "teds_s": _round_optional(teds_s_values),
     }
 
     ground_truth_status = (
@@ -367,12 +394,18 @@ def compute_metrics(results, experiment=None):
     no_detection_status = (
         "available" if successes else "not_applicable_no_detections"
     )
-    if html_truth_count:
-        structure_status = "not_implemented"
-    elif grounded_samples:
-        structure_status = "not_available_without_html_truth"
-    else:
+    if not include_teds and html_truth_count:
+        structure_status = "skipped"
+    elif html_truth_count == 0:
         structure_status = "not_available_no_ground_truth"
+    elif html_metrics:
+        structure_status = "available"
+    elif html_parse_errors:
+        structure_status = "parse_error"
+    elif html_missing_predictions:
+        structure_status = "missing_prediction_html"
+    else:
+        structure_status = "not_available"
 
     metric_status = {
         "table_detection_rate": (
@@ -419,6 +452,13 @@ def compute_metrics(results, experiment=None):
             "html_samples": html_truth_count,
             "sample_count": total,
         },
+        "teds_coverage": {
+            "sample_count": html_truth_count,
+            "available": len(html_metrics),
+            "parse_errors": html_parse_errors,
+            "missing_prediction_html": html_missing_predictions,
+            "skipped": teds_skipped,
+        },
         "definitions": {
             "table_detection_rate": (
                 "successful cell detections / completed samples "
@@ -441,6 +481,12 @@ def compute_metrics(results, experiment=None):
             "structure_edges": (
                 "precision/recall/F1 over right and lower adjacency "
                 "edges in the occupied cell grid"
+            ),
+            "teds": (
+                "ordered tree edit similarity including canonical cell text"
+            ),
+            "teds_s": (
+                "ordered tree edit similarity with structure-only labels"
             ),
         },
     }

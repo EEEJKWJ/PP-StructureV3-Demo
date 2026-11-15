@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from app.evaluation.metrics import compute_metrics
+from app.evaluation.teds import calculate_html_metrics
 
 
 EXPERIMENT_FORMAT_VERSION = 1
@@ -195,12 +196,18 @@ class ExperimentStore:
         )
         return summary
 
-    def write_metrics_report(self, summary=None, results=None):
+    def write_metrics_report(
+        self,
+        summary=None,
+        results=None,
+        include_teds=True,
+    ):
         """重算指标并同步写入独立报告和 summary。"""
         results = results or self.load_latest_results()
         report = compute_metrics(
             results.values(),
             experiment=self.experiment,
+            include_teds=include_teds,
         )
         atomic_write_json(self.metrics_path, report)
 
@@ -354,6 +361,15 @@ class BatchRunner:
             if isinstance(last_result, dict)
             else ""
         )
+        truth_html = (
+            (sample.ground_truth or {}).get("html")
+            if sample.ground_truth
+            else ""
+        )
+        html_metrics = calculate_html_metrics(
+            table_html,
+            truth_html,
+        )
         result = {
             "run_id": run_id,
             **sample.locating_info(),
@@ -378,6 +394,7 @@ class BatchRunner:
             "html_present": bool(table_html),
             "cells": cells,
             "html": table_html,
+            "html_metrics": html_metrics,
             "ground_truth": sample.ground_truth,
             "errors": errors,
         }

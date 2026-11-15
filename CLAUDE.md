@@ -47,6 +47,7 @@ PDF 上传
 - `app/evaluation/comparison.py` — 多模型对齐、胜负和报告导出
 - `app/evaluation/comparison_reports.py` — 只读对比报告 API
 - `app/evaluation/metrics.py` — 基础指标、百分位和可选真值指标
+- `app/evaluation/teds.py` — HTML 树、TEDS 与 S-TEDS
 - `scripts/run_fintabnet.py` — FinTabNet 批量运行 CLI
 - `scripts/compute_metrics.py` — 从逐样本结果重算指标
 - `configs/models/registry.json` — 默认模型注册清单
@@ -161,6 +162,7 @@ pred_html 不保留换行。用 `table_ocr_pred.rec_texts` + `rec_boxes` 按 Y �
 - 模型 HTML 必须先经过 `sanitizeTableHtml()`；禁止直接插入模型返回原文
 - FinTabNet 工作台真值状态为 `not_available`，不得用 OCR 词框伪造单元格真值
 - FinTabNet.c 的结构真值来自 XML 规范化，不是 OCR 词框推断
+- TEDS 必须使用树编辑距离；不得用 HTML 字符串编辑距离近似
 - FinTabNet 对比中 `quality_winner=null`；单元格数量不能作为质量胜者依据
 - 批量实验写入 `experiments/`，该目录和数据集一样不进入 Git；续跑以
   `results.jsonl` 中每个 `sample_id` 的最后一条结果为准
