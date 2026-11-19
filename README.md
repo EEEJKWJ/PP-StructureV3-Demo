@@ -348,6 +348,9 @@ python launch_pp_structurev3.py
 官方多页接口暂不执行跨页表格合并，并通过
 `cross_page_table_merge=false` 明确标记。
 
+100 条官方表格与当前自定义表格的对比方法和结果见
+[docs/OFFICIAL_TABLE_COMPARISON.md](docs/OFFICIAL_TABLE_COMPARISON.md)。
+
 ### 模型对比与报告
 
 对同一数据集范围运行多个模型：
