@@ -27,7 +27,10 @@ from app.services.ocr import OCRService
 from app.services.document import DocumentService
 from app.services.table import TableService
 from app.services.structure import StructureService
-from app.services.official_parser import OfficialPPStructureParser
+from app.services.official_parser import (
+    OfficialPPStructureParser,
+    apply_custom_table_results,
+)
 from app.evaluation.reports import EvaluationReports
 from app.datasets.registry import DatasetRegistry
 from app.evaluation.workbench import SampleWorkbenchService
@@ -134,8 +137,16 @@ _dataset_registry = DatasetRegistry()
 _sample_workbench = SampleWorkbenchService(_dataset_registry, log)
 _comparison_reports = ComparisonReports(Path("experiments/comparisons"))
 _official_parser = OfficialPPStructureParser(log)
+_official_custom_parser = OfficialPPStructureParser(
+    log,
+    pipeline_kwargs={"use_table_recognition": False},
+)
 
-DOCUMENT_ENGINES = {"legacy", "official_v3"}
+DOCUMENT_ENGINES = {
+    "legacy",
+    "official_v3",
+    "official_v3_custom_table",
+}
 
 
 def _document_engine_mode():
@@ -151,6 +162,16 @@ def _document_engine_mode():
         )
         return "legacy"
     return mode
+
+
+def _is_official_engine(mode):
+    return mode in {"official_v3", "official_v3_custom_table"}
+
+
+def _official_parser_for_mode(mode):
+    if mode == "official_v3_custom_table":
+        return _official_custom_parser
+    return _official_parser
 
 
 def _sync_table_engine_state():
@@ -265,8 +286,9 @@ def page_has_text(pdf_path: str, page_num: int) -> bool:
 
 @app.on_event("startup")
 async def startup_event():
-    if _document_engine_mode() == "official_v3":
-        log.info("文档解析引擎: 官方 PP-StructureV3（延迟加载）")
+    mode = _document_engine_mode()
+    if _is_official_engine(mode):
+        log.info("文档解析引擎: %s（延迟加载）", mode)
         return
     threading.Thread(target=_load_model, daemon=True).start()
     threading.Thread(target=_download_ocr_models, daemon=True).start()
@@ -277,9 +299,10 @@ async def startup_event():
 async def model_status():
     engine_mode = _document_engine_mode()
     gpu = _layout_service.gpu_info()
-    if engine_mode == "official_v3":
+    if _is_official_engine(engine_mode):
+        parser = _official_parser_for_mode(engine_mode)
         load_error = getattr(
-            _official_parser,
+            parser,
             "load_error",
             "",
         )
@@ -294,8 +317,12 @@ async def model_status():
             "ocr_model": "",
             "gpu": gpu["available"],
             "gpu_name": gpu["name"],
-            "table_engine": "official",
-            "document_engine": "official_v3",
+            "table_engine": (
+                "custom"
+                if engine_mode == "official_v3_custom_table"
+                else "official"
+            ),
+            "document_engine": engine_mode,
         }
     ocr_status = _ocr_service.status()
     return {
@@ -633,7 +660,7 @@ async def get_image(doc_id: str, filename: str):
 @app.get("/api/text-source/{doc_id}/{page_num}")
 async def text_source(doc_id: str, page_num: int):
     """快速判断某页文字来源（pdf/ocr），不做检测"""
-    if _document_engine_mode() == "official_v3":
+    if _is_official_engine(_document_engine_mode()):
         return {"text_source": "official_v3"}
     doc_dir = UPLOAD_DIR / doc_id
     pdf_path = doc_dir / "source.pdf"
@@ -654,13 +681,35 @@ async def _official_page_response(doc_dir: Path, page_num: int):
         ) from exc
 
     is_pdf = (doc_dir / "source.pdf").exists()
+    mode = _document_engine_mode()
+    if mode == "legacy":
+        mode = "official_v3"
+    parser = _official_parser_for_mode(mode)
+    predict_options = {}
+    if mode == "official_v3_custom_table":
+        predict_options = {
+            "use_table_recognition": False,
+            "use_doc_orientation_classify": False,
+            "use_doc_unwarping": False,
+        }
     try:
-        return await run_in_threadpool(
-            _official_parser.parse_page,
+        result = await run_in_threadpool(
+            parser.parse_page,
             str(img_path),
             page_num,
             is_pdf,
+            predict_options,
         )
+        if mode == "official_v3_custom_table":
+            result = await run_in_threadpool(
+                apply_custom_table_results,
+                result,
+                str(img_path),
+                _table_service.recognize,
+            )
+            result["document_engine"] = mode
+            result["engine"]["table_engine"] = "custom"
+        return result
     except Exception as exc:
         log.error("官方 PP-StructureV3 页面解析失败: %s", exc)
         raise HTTPException(
@@ -672,7 +721,7 @@ async def _official_page_response(doc_dir: Path, page_num: int):
 @app.post("/api/detect/{doc_id}/{page_num}")
 async def detect(doc_id: str, page_num: int):
     doc_dir = UPLOAD_DIR / doc_id
-    if _document_engine_mode() == "official_v3":
+    if _is_official_engine(_document_engine_mode()):
         return await _official_page_response(doc_dir, page_num)
     try:
         img_path = ensure_page_image(doc_dir, page_num)
@@ -776,8 +825,25 @@ async def official_detect(doc_id: str, page_num: int):
     return await _official_page_response(doc_dir, page_num)
 
 
-async def _official_document_response(doc_id, doc_dir):
+def _apply_custom_tables_to_pages(pages, page_paths):
+    """逐页用当前注册表格模型替换官方表格结果。"""
+    for page, image_path in zip(pages, page_paths):
+        apply_custom_table_results(
+            page,
+            str(image_path),
+            _table_service.recognize,
+        )
+        page["document_engine"] = "official_v3_custom_table"
+        page["engine"]["table_engine"] = "custom"
+    return pages
+
+
+async def _official_document_response(doc_id, doc_dir, mode=None):
     """执行官方多页解析并返回兼容结果。"""
+    mode = mode or _document_engine_mode()
+    if mode == "legacy":
+        mode = "official_v3"
+    parser = _official_parser_for_mode(mode)
     pdf_path = doc_dir / "source.pdf"
     is_pdf = pdf_path.exists()
     if is_pdf:
@@ -800,12 +866,26 @@ async def _official_document_response(doc_id, doc_dir):
             status_code=404,
             detail="document pages not found",
         )
+    predict_options = {}
+    if mode == "official_v3_custom_table":
+        predict_options = {
+            "use_table_recognition": False,
+            "use_doc_orientation_classify": False,
+            "use_doc_unwarping": False,
+        }
     try:
         pages = await run_in_threadpool(
-            _official_parser.parse_pages,
+            parser.parse_pages,
             [str(path) for path in page_paths],
             is_pdf,
+            predict_options,
         )
+        if mode == "official_v3_custom_table":
+            pages = await run_in_threadpool(
+                _apply_custom_tables_to_pages,
+                pages,
+                page_paths,
+            )
     except Exception as exc:
         log.error("官方 PP-StructureV3 多页解析失败: %s", exc)
         raise HTTPException(
@@ -817,11 +897,17 @@ async def _official_document_response(doc_id, doc_dir):
         "pages": pages,
         "is_pdf": is_pdf,
         "table_merges": None,
+        "document_engine": mode,
         "engine": {
             "id": "official_v3",
             "name": "PaddleOCR PP-StructureV3",
             "page_count": len(pages),
             "cross_page_table_merge": False,
+            "table_engine": (
+                "custom"
+                if mode == "official_v3_custom_table"
+                else "official"
+            ),
         },
     }
 
@@ -835,7 +921,11 @@ async def official_detect_all(doc_id: str):
             status_code=404,
             detail="document not found",
         )
-    return await _official_document_response(doc_id, doc_dir)
+    return await _official_document_response(
+        doc_id,
+        doc_dir,
+        mode="official_v3",
+    )
 
 
 @app.post("/api/detect-all/{doc_id}")
@@ -843,8 +933,9 @@ async def detect_all(doc_id: str):
     doc_dir = UPLOAD_DIR / doc_id
     if not doc_dir.exists():
         return {"error": "document not found"}
-    if _document_engine_mode() == "official_v3":
-        return await _official_document_response(doc_id, doc_dir)
+    mode = _document_engine_mode()
+    if _is_official_engine(mode):
+        return await _official_document_response(doc_id, doc_dir, mode)
 
     pdf_path = doc_dir / "source.pdf"
     is_pdf = pdf_path.exists()

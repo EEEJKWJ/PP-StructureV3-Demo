@@ -322,6 +322,27 @@ python launch_pp_structurev3.py
 Remove-Item Env:PP_DOCUMENT_ENGINE
 ```
 
+使用“官方整页上下文 + 当前自定义表格模型”：
+
+```powershell
+$env:PP_DOCUMENT_ENGINE = "official_v3_custom_table"
+python launch_pp_structurev3.py
+```
+
+该模式关闭官方表格子模型，使用页面块检测结果中的 table bbox 裁图，
+再调用当前模型注册表中的活动表格模型。页面结果中的 table block 会标记：
+
+```json
+{
+  "table_source": "custom",
+  "table_model": {
+    "id": "pp-tablemagic-v2"
+  }
+}
+```
+
+官方表格结果会保存在 `official_table` 中，便于对照和回退。
+
 官方多页接口暂不执行跨页表格合并，并通过
 `cross_page_table_merge=false` 明确标记。
 

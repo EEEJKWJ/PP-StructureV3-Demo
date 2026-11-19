@@ -416,13 +416,17 @@ async function pollModelStatus() {
             ? ` | 表格: ${
               data.table_engine === "official"
                 ? "官方 PP-StructureV3"
+                : data.table_engine === "custom"
+                ? "自定义表格模型"
                 : data.table_engine === "paddle"
                 ? "PP-TableMagic V2"
                 : "RapidTable"
             }`
             : "";
         const documentLabel =
-          data.document_engine === "official_v3"
+          data.document_engine === "official_v3_custom_table"
+            ? " | 文档: 官方流程 + 自定义表格"
+            : data.document_engine === "official_v3"
             ? " | 文档: 官方 PP-StructureV3"
             : " | 文档: Legacy";
         element.textContent =

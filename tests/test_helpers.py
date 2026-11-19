@@ -432,7 +432,11 @@ class LayoutAndOcrServiceTests(unittest.TestCase):
         self.assertIsInstance(status["gpu"], bool)
         self.assertIn(
             status["document_engine"],
-            {"legacy", "official_v3"},
+            {
+                "legacy",
+                "official_v3",
+                "official_v3_custom_table",
+            },
         )
 
 

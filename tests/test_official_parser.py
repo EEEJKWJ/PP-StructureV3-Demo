@@ -11,6 +11,7 @@ from PIL import Image
 import server
 from app.services.official_parser import (
     OfficialPPStructureParser,
+    apply_custom_table_results,
     normalize_official_result,
 )
 
@@ -125,6 +126,43 @@ class OfficialResultNormalizationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             normalize_official_result([])
 
+    def test_custom_table_results_replace_official_table(self):
+        page = normalize_official_result(official_payload())
+
+        def Recognizer(image_path, bbox):
+            self.assertEqual(image_path, "page.png")
+            self.assertEqual(bbox, [5, 30, 95, 65])
+            return {
+                "cells": [{
+                    "row": 0,
+                    "col": 0,
+                    "text": "custom",
+                    "bbox": [8, 35, 40, 50],
+                }],
+                "html": "<table><tr><td>custom</td></tr></table>",
+                "model": {"id": "custom-table"},
+                "elapsed_ms": 12.5,
+            }
+
+        result = apply_custom_table_results(
+            page,
+            "page.png",
+            Recognizer,
+        )
+
+        table = result["blocks"][2]
+        self.assertEqual(table["table_source"], "custom")
+        self.assertEqual(table["cells"][0]["text"], "custom")
+        self.assertEqual(table["table_model"]["id"], "custom-table")
+        self.assertEqual(
+            result["structured"]["content"][2]["table_source"],
+            "custom",
+        )
+        self.assertEqual(
+            result["official_context"]["custom_table_count"],
+            1,
+        )
+
 
 class OfficialParserServiceTests(unittest.TestCase):
     def test_engine_is_loaded_lazily_once(self):
@@ -193,7 +231,13 @@ class OfficialParserServiceTests(unittest.TestCase):
 class OfficialParserApiTests(unittest.TestCase):
     def test_official_endpoint_returns_normalized_page(self):
         class FakeParser:
-            def parse_page(self, image_path, page_num, is_pdf):
+            def parse_page(
+                self,
+                image_path,
+                page_num,
+                is_pdf,
+                predict_options,
+            ):
                 self.args = (image_path, page_num, is_pdf)
                 return normalize_official_result(
                     official_payload(),
@@ -226,7 +270,12 @@ class OfficialParserApiTests(unittest.TestCase):
 
     def test_official_all_endpoint_returns_compatible_pages(self):
         class FakeParser:
-            def parse_pages(self, image_paths, is_pdf):
+            def parse_pages(
+                self,
+                image_paths,
+                is_pdf,
+                predict_options,
+            ):
                 self.args = (image_paths, is_pdf)
                 return [
                     normalize_official_result(
@@ -264,7 +313,13 @@ class OfficialParserApiTests(unittest.TestCase):
 
     def test_detect_and_text_source_follow_engine_switch(self):
         class FakeParser:
-            def parse_page(self, image_path, page_num, is_pdf):
+            def parse_page(
+                self,
+                image_path,
+                page_num,
+                is_pdf,
+                predict_options,
+            ):
                 return normalize_official_result(
                     official_payload(),
                     page_num=page_num,
@@ -300,6 +355,84 @@ class OfficialParserApiTests(unittest.TestCase):
         self.assertEqual(
             status.json()["document_engine"],
             "official_v3",
+        )
+
+    def test_custom_table_engine_replaces_official_table(self):
+        class FakeParser:
+            def parse_page(
+                self,
+                image_path,
+                page_num,
+                is_pdf,
+                predict_options,
+            ):
+                self.predict_options = predict_options
+                return normalize_official_result(
+                    official_payload(),
+                    page_num=page_num,
+                    is_pdf=is_pdf,
+                )
+
+        parser = FakeParser()
+        table_result = {
+            "cells": [{
+                "row": 0,
+                "col": 0,
+                "text": "custom",
+                "bbox": [8, 35, 40, 50],
+            }],
+            "html": "<table><tr><td>custom</td></tr></table>",
+            "model": {"id": "pp-tablemagic-v2"},
+            "elapsed_ms": 8.0,
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            upload_dir = Path(temp_dir)
+            doc_dir = upload_dir / "doc"
+            doc_dir.mkdir()
+            Image.new("RGB", (100, 80), "white").save(
+                doc_dir / "page_001.png"
+            )
+            with (
+                patch.object(server, "UPLOAD_DIR", upload_dir),
+                patch.object(
+                    server,
+                    "_official_custom_parser",
+                    parser,
+                ),
+                patch.object(
+                    server._table_service,
+                    "recognize",
+                    return_value=table_result,
+                ),
+                patch.dict(
+                    os.environ,
+                    {
+                        "PP_DOCUMENT_ENGINE": (
+                            "official_v3_custom_table"
+                        ),
+                    },
+                ),
+            ):
+                client = TestClient(server.app)
+                response = client.post("/api/detect/doc/1")
+                status = client.get("/api/model-status")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertFalse(
+            parser.predict_options["use_table_recognition"]
+        )
+        self.assertEqual(
+            payload["blocks"][2]["table_source"],
+            "custom",
+        )
+        self.assertEqual(
+            status.json()["table_engine"],
+            "custom",
+        )
+        self.assertEqual(
+            status.json()["document_engine"],
+            "official_v3_custom_table",
         )
 
 

@@ -75,7 +75,7 @@ def _table_cells(table_result):
     return table_html, cells, has_bbox
 
 
-def _structured_item(block, table):
+def _structured_item(block):
     """把单个官方 block 转换为当前 structured.content 项。"""
     label = str(block.get("label") or "")
     content = block.get("ocr_text") or ""
@@ -92,11 +92,11 @@ def _structured_item(block, table):
             "rows": rows,
             "html": html,
             "engine": "official_v3",
+            "table_source": block.get("table_source", "official"),
         }
-        if table is not None:
-            item["capabilities"] = {
-                "cell_bbox": bool(block.get("cell_bbox_available")),
-            }
+        item["capabilities"] = {
+            "cell_bbox": bool(block.get("cell_bbox_available")),
+        }
         return item
     if label in TITLE_LABELS and content:
         return {"type": "title", "text": content}
@@ -105,6 +105,15 @@ def _structured_item(block, table):
     if label in TEXT_LABELS and content:
         return {"type": "text", "text": content}
     return None
+
+
+def _build_structured_content(blocks):
+    content = []
+    for block in blocks:
+        item = _structured_item(block)
+        if item is not None:
+            content.append(item)
+    return content
 
 
 def normalize_official_result(
@@ -123,7 +132,6 @@ def normalize_official_result(
     table_results = data.get("table_res_list") or []
     table_index = 0
     blocks = []
-    content = []
 
     for source_block in parsing_blocks:
         label = str(source_block.get("block_label") or "text")
@@ -155,14 +163,13 @@ def normalize_official_result(
                 "id": "official-pp-structurev3",
                 "name": "Official PP-StructureV3 table recognition",
             }
+            block["table_source"] = "official"
             block["ocr_text"] = ""
 
-        item = _structured_item(block, table_result)
-        if item is not None:
-            content.append(item)
         blocks.append(block)
 
     blocks.sort(key=lambda item: item["order"])
+    content = _build_structured_content(blocks)
     page_index = data.get("page_index")
     resolved_page = page_num
     if resolved_page is None:
@@ -200,22 +207,84 @@ def normalize_official_result(
     }
 
 
+def apply_custom_table_results(page_result, image_path, recognizer):
+    """用当前注册表格模型替换官方 table block 内容。"""
+    blocks = page_result.get("blocks") or []
+    success_count = 0
+    failures = []
+    for block in blocks:
+        if block.get("label") != "table":
+            continue
+        table_bbox = block.get("bbox") or []
+        official_table = {
+            "html": block.get("table_html") or "",
+            "model": block.get("table_model"),
+            "cell_bbox_available": bool(
+                block.get("cell_bbox_available")
+            ),
+        }
+        try:
+            result = recognizer(image_path, table_bbox)
+            if not result or (
+                not result.get("cells") and not result.get("html")
+            ):
+                raise RuntimeError("自定义表格模型未返回结果")
+            cells = result.get("cells") or []
+            has_bbox = any(
+                cell.get("bbox")
+                and list(cell["bbox"]) != [0, 0, 0, 0]
+                for cell in cells
+            )
+            if not has_bbox:
+                for cell in cells:
+                    cell.pop("bbox", None)
+            block["official_table"] = official_table
+            block["cells"] = cells or None
+            block["table_html"] = result.get("html") or ""
+            block["table_model"] = result.get("model")
+            block["table_elapsed_ms"] = result.get("elapsed_ms")
+            block["cell_bbox_available"] = has_bbox
+            block["table_source"] = "custom"
+            success_count += 1
+        except Exception as exc:
+            block["table_source"] = "official"
+            block["table_error"] = str(exc)
+            failures.append({
+                "block_id": block.get("official_block_id"),
+                "bbox": table_bbox,
+                "error": str(exc),
+            })
+
+    page_result["structured"]["content"] = _build_structured_content(
+        blocks
+    )
+    context = page_result.setdefault("official_context", {})
+    context["custom_table_count"] = success_count
+    context["custom_table_failures"] = failures
+    return page_result
+
+
 class OfficialPPStructureParser:
     """延迟加载并封装官方 PP-StructureV3。"""
 
-    def __init__(self, logger, engine_factory=None):
+    def __init__(
+        self,
+        logger,
+        engine_factory=None,
+        pipeline_kwargs=None,
+    ):
         self.log = logger
+        self.pipeline_kwargs = dict(pipeline_kwargs or {})
         self.engine_factory = engine_factory or self._create_engine
         self.engine = None
         self.load_error = ""
         self._load_lock = threading.Lock()
         self._inference_lock = threading.Lock()
 
-    @staticmethod
-    def _create_engine():
+    def _create_engine(self):
         from paddleocr import PPStructureV3
 
-        return PPStructureV3()
+        return PPStructureV3(**self.pipeline_kwargs)
 
     def ensure_loaded(self):
         if self.engine is not None:
@@ -266,13 +335,19 @@ class OfficialPPStructureParser:
             is_pdf=is_pdf,
         )
 
-    def parse_pages(self, image_paths, is_pdf=False):
+    def parse_pages(
+        self,
+        image_paths,
+        is_pdf=False,
+        predict_options=None,
+    ):
         """按顺序解析多页图片并返回 Demo 页面结果。"""
         return [
             self.parse_page(
                 image_path,
                 page_num=index,
                 is_pdf=is_pdf,
+                predict_options=predict_options,
             )
             for index, image_path in enumerate(image_paths, 1)
         ]
