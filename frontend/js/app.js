@@ -231,12 +231,35 @@ function onImageLoaded() {
   }
 }
 
+function requirePageDetection(data) {
+  if (data?.error) throw new Error(data.error);
+  if (!data || !Array.isArray(data.blocks)) {
+    throw new Error("检测接口返回格式错误：缺少 blocks 数组");
+  }
+  return data;
+}
+
 async function handleFile(file) {
+  if (!file) return;
   document.getElementById("sourceTag").innerHTML = "";
   document.getElementById("resultList").innerHTML =
     '<div class="loading">上传中...</div>';
 
-  const data = await uploadDocument(file);
+  let data;
+  try {
+    data = await uploadDocument(file);
+    if (
+      !data?.doc_id
+      || !Array.isArray(data.pages)
+      || data.pages.length === 0
+    ) {
+      throw new Error("上传接口返回格式错误");
+    }
+  } catch (error) {
+    document.getElementById("resultList").innerHTML =
+      `<div class="loading">上传失败: ${escHtml(error.message)}</div>`;
+    return;
+  }
   state.docId = data.doc_id;
   state.pages = data.pages;
   state.isPdf = data.is_pdf;
@@ -276,7 +299,9 @@ async function detectCurrent() {
         '<span class="source-tag pdf">PDF 文字层</span>';
     }
 
-    const data = await detectPage(state.docId, state.activePage);
+    const data = requirePageDetection(
+      await detectPage(state.docId, state.activePage),
+    );
     state.detectedPages[state.activePage] = data;
     drawBoxes(data);
     renderResults();
@@ -315,9 +340,8 @@ async function detectAll() {
         `${((page - 0.5) / totalPages) * 100}%`;
 
       if (!state.detectedPages[page]) {
-        state.detectedPages[page] = await detectPage(
-          state.docId,
-          page,
+        state.detectedPages[page] = requirePageDetection(
+          await detectPage(state.docId, page),
         );
       }
       progressElement.querySelector(".fill").style.width =
@@ -327,6 +351,10 @@ async function detectAll() {
     progressElement.querySelector(".progress-text").textContent =
       "正在做跨页表格合并分析...";
     const allData = await detectAllPages(state.docId);
+    if (allData?.error) throw new Error(allData.error);
+    if (!allData || !Array.isArray(allData.pages)) {
+      throw new Error("全部检测接口返回格式错误：缺少 pages 数组");
+    }
     state.allPagesData = allData;
 
     for (const pageData of allData.pages) {

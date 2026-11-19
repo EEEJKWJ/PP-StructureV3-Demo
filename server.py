@@ -543,19 +543,26 @@ async def upload(file: UploadFile = File(...)):
     doc_dir.mkdir(parents=True, exist_ok=True)
 
     content = await file.read()
-    is_pdf = file.filename.lower().endswith(".pdf")
+    filename = Path(file.filename or "upload").name
+    is_pdf = filename.lower().endswith(".pdf")
 
     if is_pdf:
         page_count = pdf_save_and_count(content, doc_dir)
         filenames = [f"page_{i:03d}.png" for i in range(1, page_count + 1)]
     else:
-        name = f"page_001{Path(file.filename).suffix}"
-        (doc_dir / name).write_bytes(content)
-        filenames = [name]
+        try:
+            _document_service.save_image(content, doc_dir)
+        except (OSError, ValueError) as exc:
+            shutil.rmtree(doc_dir, ignore_errors=True)
+            raise HTTPException(
+                status_code=400,
+                detail="无法读取上传图片，请使用 JPG、PNG、WEBP、BMP 或 TIFF 格式",
+            ) from exc
+        filenames = ["page_001.png"]
 
     return {
         "doc_id": doc_id,
-        "filename": file.filename,
+        "filename": filename,
         "pages": filenames,
         "is_pdf": is_pdf,
     }

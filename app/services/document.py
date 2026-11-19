@@ -1,8 +1,10 @@
 """上传文档与 PDF 读取服务。"""
 
+from io import BytesIO
 from pathlib import Path
 
 import fitz
+from PIL import Image, ImageOps
 
 
 class DocumentService:
@@ -20,6 +22,31 @@ class DocumentService:
         page_count = len(document)
         document.close()
         return page_count
+
+    def save_image(self, image_bytes, doc_dir, filename="page_001.png"):
+        """校正图片方向并统一保存为 RGB PNG。"""
+        doc_dir = Path(doc_dir)
+        image_path = doc_dir / filename
+        with Image.open(BytesIO(image_bytes)) as source:
+            source.load()
+            has_alpha = (
+                source.mode in {"RGBA", "LA"}
+                or "transparency" in source.info
+            )
+            dpi = source.info.get("dpi")
+            image = ImageOps.exif_transpose(source)
+            if has_alpha:
+                rgba = image.convert("RGBA")
+                flattened = Image.new("RGB", rgba.size, "white")
+                flattened.paste(rgba, mask=rgba.getchannel("A"))
+                image = flattened
+            elif image.mode != "RGB":
+                image = image.convert("RGB")
+            save_kwargs = {"format": "PNG", "optimize": True}
+            if dpi:
+                save_kwargs["dpi"] = dpi
+            image.save(image_path, **save_kwargs)
+        return image_path
 
     def ensure_page_image(self, doc_dir, page_num):
         """按需把单页渲染为 PNG，并返回图片路径。"""

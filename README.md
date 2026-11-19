@@ -16,6 +16,8 @@ PDF 文档版面结构化分析工具。上传 PDF 后自动检测版面区域�
 - **文本型 PDF**：PyMuPDF 直接提取文字层（毫秒级）
 - **扫描件 PDF**：PP-OCRv5 ONNX 自动识别（GPU 用 server 版，CPU 用 mobile 版）
 - 逐页智能判断，混合 PDF 也能正确处理
+- **图片上传**：JPG、PNG、WEBP、BMP、TIFF 会校正方向并统一转换为 RGB PNG，
+  保持页面像素坐标一致
 
 ### 表格结构
 - **文本型 PDF**：PyMuPDF 提取单元格级结构（行、列、合并单元格、文字内容）

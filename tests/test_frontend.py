@@ -1,8 +1,12 @@
 import re
+import tempfile
 import unittest
+from io import BytesIO
 from pathlib import Path
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
+from PIL import Image
 
 import server
 
@@ -155,6 +159,17 @@ class FrontendStructureTests(unittest.TestCase):
         self.assertIn("暂无模型对比报告", comparison_source)
         self.assertIn("compare_models.py", comparison_source)
 
+    def test_detection_response_is_validated_before_drawing(self):
+        app_source = (
+            FRONTEND_DIR / "js" / "app.js"
+        ).read_text(encoding="utf-8")
+        self.assertIn("function requirePageDetection", app_source)
+        self.assertIn("缺少 blocks 数组", app_source)
+        self.assertIn(
+            "requirePageDetection(\n      await detectPage",
+            app_source,
+        )
+
     def test_no_frontend_build_manifest_is_required(self):
         self.assertFalse((PROJECT_DIR / "package.json").exists())
         self.assertFalse((PROJECT_DIR / "vite.config.js").exists())
@@ -191,6 +206,106 @@ class FrontendStaticRouteTests(unittest.TestCase):
                     "javascript",
                     response.headers["content-type"],
                 )
+
+
+class ImageUploadApiTests(unittest.TestCase):
+    @staticmethod
+    def jpeg_bytes():
+        image = Image.new("RGB", (32, 20), "white")
+        buffer = BytesIO()
+        image.save(buffer, format="JPEG")
+        return buffer.getvalue()
+
+    def test_jpeg_upload_is_saved_as_png(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            upload_dir = Path(temp_dir)
+            with patch.object(server, "UPLOAD_DIR", upload_dir):
+                client = TestClient(server.app)
+                response = client.post(
+                    "/api/upload",
+                    files={
+                        "file": (
+                            "table.jpg",
+                            self.jpeg_bytes(),
+                            "image/jpeg",
+                        ),
+                    },
+                )
+                self.assertEqual(response.status_code, 200)
+                payload = response.json()
+                self.assertFalse(payload["is_pdf"])
+                self.assertEqual(payload["pages"], ["page_001.png"])
+                image_path = (
+                    upload_dir
+                    / payload["doc_id"]
+                    / "page_001.png"
+                )
+                self.assertTrue(image_path.is_file())
+                with Image.open(image_path) as image:
+                    self.assertEqual(image.format, "PNG")
+
+                image_response = client.get(
+                    f"/api/images/{payload['doc_id']}/page_001.png"
+                )
+                self.assertEqual(image_response.status_code, 200)
+                self.assertEqual(
+                    image_response.headers["content-type"],
+                    "image/png",
+                )
+                blocks = [{
+                    "label": "text",
+                    "bbox": [0, 0, 32, 20],
+                    "order": 0,
+                }]
+                with (
+                    patch.object(
+                        server,
+                        "detect_layout",
+                        return_value=blocks,
+                    ),
+                    patch.object(
+                        server,
+                        "ocr_blocks",
+                        return_value={0: [{
+                            "text": "测试",
+                            "bbox": [1, 1, 10, 10],
+                        }]},
+                    ),
+                    patch.object(
+                        server,
+                        "build_structured",
+                        return_value=[],
+                    ),
+                ):
+                    detect_response = client.post(
+                        f"/api/detect/{payload['doc_id']}/1"
+                    )
+                self.assertEqual(detect_response.status_code, 200)
+                detected = detect_response.json()
+                self.assertEqual(detected["text_source"], "ocr")
+                self.assertEqual(len(detected["blocks"]), 1)
+                self.assertEqual(
+                    detected["blocks"][0]["ocr_text"],
+                    "测试",
+                )
+
+    def test_invalid_image_upload_returns_400(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            upload_dir = Path(temp_dir)
+            with patch.object(server, "UPLOAD_DIR", upload_dir):
+                client = TestClient(server.app)
+                response = client.post(
+                    "/api/upload",
+                    files={
+                        "file": (
+                            "broken.jpg",
+                            b"not an image",
+                            "image/jpeg",
+                        ),
+                    },
+                )
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(list(upload_dir.iterdir()), [])
 
 
 if __name__ == "__main__":

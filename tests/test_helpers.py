@@ -2,10 +2,12 @@ import asyncio
 import logging
 import tempfile
 import unittest
+from io import BytesIO
 from pathlib import Path
 
 import fitz
 import server
+from PIL import Image
 from app.services.document import DocumentService
 from app.services.layout import LayoutService
 from app.services.ocr import OCRService
@@ -430,6 +432,26 @@ class LayoutAndOcrServiceTests(unittest.TestCase):
 
 
 class DocumentServiceTests(unittest.TestCase):
+    def test_image_is_normalized_to_rgb_png(self):
+        service = DocumentService(
+            logging.getLogger("test-document"),
+            garbage_detector=lambda text: False,
+        )
+        source = Image.new("RGBA", (24, 12), (255, 0, 0, 128))
+        buffer = BytesIO()
+        source.save(buffer, format="PNG")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            doc_dir = Path(temp_dir)
+            image_path = service.save_image(
+                buffer.getvalue(),
+                doc_dir,
+            )
+            with Image.open(image_path) as saved:
+                self.assertEqual(saved.format, "PNG")
+                self.assertEqual(saved.mode, "RGB")
+                self.assertEqual(saved.size, (24, 12))
+
     def test_save_render_and_extract_text(self):
         service = DocumentService(
             logging.getLogger("test-document"),

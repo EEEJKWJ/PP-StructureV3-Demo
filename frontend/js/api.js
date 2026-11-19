@@ -1,5 +1,18 @@
 async function responseJson(response) {
-  return response.json();
+  let data;
+  try {
+    data = await response.json();
+  } catch {
+    throw new Error(`接口返回了无效 JSON（HTTP ${response.status}）`);
+  }
+  if (!response.ok) {
+    throw new Error(
+      data?.detail
+      || data?.error
+      || `接口请求失败（HTTP ${response.status}）`,
+    );
+  }
+  return data;
 }
 
 export async function getModelStatus() {
