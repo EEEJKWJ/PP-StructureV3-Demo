@@ -1,4 +1,5 @@
 import logging
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -165,6 +166,29 @@ class OfficialParserServiceTests(unittest.TestCase):
             {"format_block_content": False},
         )
 
+    def test_parse_pages_reuses_loaded_engine(self):
+        class Result:
+            json = official_payload()
+
+        class Engine:
+            def __init__(self):
+                self.calls = []
+
+            def predict(self, image_path, **options):
+                self.calls.append(image_path)
+                return [Result()]
+
+        engine = Engine()
+        parser = OfficialPPStructureParser(
+            logging.getLogger("test-official-parser"),
+            engine_factory=lambda: engine,
+        )
+
+        pages = parser.parse_pages(["page1.png", "page2.png"])
+
+        self.assertEqual([page["page"] for page in pages], [1, 2])
+        self.assertEqual(engine.calls, ["page1.png", "page2.png"])
+
 
 class OfficialParserApiTests(unittest.TestCase):
     def test_official_endpoint_returns_normalized_page(self):
@@ -199,6 +223,84 @@ class OfficialParserApiTests(unittest.TestCase):
         self.assertEqual(payload["engine"]["id"], "official_v3")
         self.assertTrue(payload["is_pdf"])
         self.assertEqual(parser.args[1:], (1, True))
+
+    def test_official_all_endpoint_returns_compatible_pages(self):
+        class FakeParser:
+            def parse_pages(self, image_paths, is_pdf):
+                self.args = (image_paths, is_pdf)
+                return [
+                    normalize_official_result(
+                        official_payload(),
+                        page_num=index,
+                        is_pdf=is_pdf,
+                    )
+                    for index in range(1, len(image_paths) + 1)
+                ]
+
+        parser = FakeParser()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            upload_dir = Path(temp_dir)
+            doc_dir = upload_dir / "doc"
+            doc_dir.mkdir()
+            for page_num in (1, 2):
+                Image.new("RGB", (100, 80), "white").save(
+                    doc_dir / f"page_{page_num:03d}.png"
+                )
+            with (
+                patch.object(server, "UPLOAD_DIR", upload_dir),
+                patch.object(server, "_official_parser", parser),
+            ):
+                response = TestClient(server.app).post(
+                    "/api/official/detect-all/doc"
+                )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(len(payload["pages"]), 2)
+        self.assertEqual(payload["engine"]["id"], "official_v3")
+        self.assertFalse(
+            payload["engine"]["cross_page_table_merge"]
+        )
+
+    def test_detect_and_text_source_follow_engine_switch(self):
+        class FakeParser:
+            def parse_page(self, image_path, page_num, is_pdf):
+                return normalize_official_result(
+                    official_payload(),
+                    page_num=page_num,
+                    is_pdf=is_pdf,
+                )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            upload_dir = Path(temp_dir)
+            doc_dir = upload_dir / "doc"
+            doc_dir.mkdir()
+            Image.new("RGB", (100, 80), "white").save(
+                doc_dir / "page_001.png"
+            )
+            with (
+                patch.object(server, "UPLOAD_DIR", upload_dir),
+                patch.object(server, "_official_parser", FakeParser()),
+                patch.dict(
+                    os.environ,
+                    {"PP_DOCUMENT_ENGINE": "official_v3"},
+                ),
+            ):
+                client = TestClient(server.app)
+                source = client.get("/api/text-source/doc/1")
+                detected = client.post("/api/detect/doc/1")
+                status = client.get("/api/model-status")
+
+        self.assertEqual(
+            source.json()["text_source"],
+            "official_v3",
+        )
+        self.assertEqual(detected.status_code, 200)
+        self.assertEqual(detected.json()["engine"]["id"], "official_v3")
+        self.assertEqual(
+            status.json()["document_engine"],
+            "official_v3",
+        )
 
 
 if __name__ == "__main__":

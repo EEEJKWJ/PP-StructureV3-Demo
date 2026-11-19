@@ -295,6 +295,7 @@ HTML 结构真值，工作台会明确显示“无结构真值”，不会生成
 
 ```text
 POST /api/official/detect/{doc_id}/{page_num}
+POST /api/official/detect-all/{doc_id}
 ```
 
 该接口使用官方 `paddleocr.PPStructureV3` 完成整页预处理、版面检测、
@@ -307,6 +308,22 @@ PP-OCRv5、表格、公式和阅读顺序处理，再转换为当前 Demo 的 `b
 
 首次调用需要下载官方 PP-DocLayout、PP-OCRv5、表格和公式模型，模型加载
 时间与显存占用明显高于当前轻量流程。
+
+默认仍使用现有 Legacy 流程。切换到官方整页流程：
+
+```powershell
+$env:PP_DOCUMENT_ENGINE = "official_v3"
+python launch_pp_structurev3.py
+```
+
+恢复默认流程：
+
+```powershell
+Remove-Item Env:PP_DOCUMENT_ENGINE
+```
+
+官方多页接口暂不执行跨页表格合并，并通过
+`cross_page_table_merge=false` 明确标记。
 
 ### 模型对比与报告
 

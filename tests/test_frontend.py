@@ -169,6 +169,9 @@ class FrontendStructureTests(unittest.TestCase):
             "requirePageDetection(\n      await detectPage",
             app_source,
         )
+        self.assertIn('text_source === "official_v3"', app_source)
+        self.assertIn("官方 PP-StructureV3", app_source)
+        self.assertIn("当前官方适配层尚未执行跨页表格合并", app_source)
 
     def test_no_frontend_build_manifest_is_required(self):
         self.assertFalse((PROJECT_DIR / "package.json").exists())

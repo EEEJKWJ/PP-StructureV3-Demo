@@ -11,6 +11,7 @@
 import uuid
 import shutil
 import logging
+import os
 import threading
 from pathlib import Path
 
@@ -134,6 +135,23 @@ _sample_workbench = SampleWorkbenchService(_dataset_registry, log)
 _comparison_reports = ComparisonReports(Path("experiments/comparisons"))
 _official_parser = OfficialPPStructureParser(log)
 
+DOCUMENT_ENGINES = {"legacy", "official_v3"}
+
+
+def _document_engine_mode():
+    """读取并校验文档解析引擎配置。"""
+    mode = os.environ.get(
+        "PP_DOCUMENT_ENGINE",
+        "legacy",
+    ).strip().lower()
+    if mode not in DOCUMENT_ENGINES:
+        log.warning(
+            "未知文档解析引擎 %s，回退到 legacy",
+            mode,
+        )
+        return "legacy"
+    return mode
+
 
 def _sync_table_engine_state():
     global _table_engine, _table_engine_type
@@ -247,6 +265,9 @@ def page_has_text(pdf_path: str, page_num: int) -> bool:
 
 @app.on_event("startup")
 async def startup_event():
+    if _document_engine_mode() == "official_v3":
+        log.info("文档解析引擎: 官方 PP-StructureV3（延迟加载）")
+        return
     threading.Thread(target=_load_model, daemon=True).start()
     threading.Thread(target=_download_ocr_models, daemon=True).start()
     threading.Thread(target=_get_table_engine, daemon=True).start()
@@ -254,8 +275,29 @@ async def startup_event():
 
 @app.get("/api/model-status")
 async def model_status():
-    ocr_status = _ocr_service.status()
+    engine_mode = _document_engine_mode()
     gpu = _layout_service.gpu_info()
+    if engine_mode == "official_v3":
+        load_error = getattr(
+            _official_parser,
+            "load_error",
+            "",
+        )
+        return {
+            "status": (
+                "error"
+                if load_error
+                else "ready"
+            ),
+            "error": load_error,
+            "ocr_available": False,
+            "ocr_model": "",
+            "gpu": gpu["available"],
+            "gpu_name": gpu["name"],
+            "table_engine": "official",
+            "document_engine": "official_v3",
+        }
+    ocr_status = _ocr_service.status()
     return {
         "status": _layout_service.status,
         "error": _layout_service.error,
@@ -264,6 +306,7 @@ async def model_status():
         "gpu": gpu["available"],
         "gpu_name": gpu["name"],
         "table_engine": _table_engine_type or "none",
+        "document_engine": engine_mode,
     }
 
 
@@ -590,6 +633,8 @@ async def get_image(doc_id: str, filename: str):
 @app.get("/api/text-source/{doc_id}/{page_num}")
 async def text_source(doc_id: str, page_num: int):
     """快速判断某页文字来源（pdf/ocr），不做检测"""
+    if _document_engine_mode() == "official_v3":
+        return {"text_source": "official_v3"}
     doc_dir = UPLOAD_DIR / doc_id
     pdf_path = doc_dir / "source.pdf"
     if pdf_path.exists():
@@ -598,9 +643,37 @@ async def text_source(doc_id: str, page_num: int):
     return {"text_source": "ocr"}
 
 
+async def _official_page_response(doc_dir: Path, page_num: int):
+    """在线程池中执行官方单页解析。"""
+    try:
+        img_path = ensure_page_image(doc_dir, page_num)
+    except (FileNotFoundError, IndexError) as exc:
+        raise HTTPException(
+            status_code=404,
+            detail="page not found",
+        ) from exc
+
+    is_pdf = (doc_dir / "source.pdf").exists()
+    try:
+        return await run_in_threadpool(
+            _official_parser.parse_page,
+            str(img_path),
+            page_num,
+            is_pdf,
+        )
+    except Exception as exc:
+        log.error("官方 PP-StructureV3 页面解析失败: %s", exc)
+        raise HTTPException(
+            status_code=503,
+            detail=f"官方 PP-StructureV3 解析失败: {exc}",
+        ) from exc
+
+
 @app.post("/api/detect/{doc_id}/{page_num}")
 async def detect(doc_id: str, page_num: int):
     doc_dir = UPLOAD_DIR / doc_id
+    if _document_engine_mode() == "official_v3":
+        return await _official_page_response(doc_dir, page_num)
     try:
         img_path = ensure_page_image(doc_dir, page_num)
     except FileNotFoundError:
@@ -700,28 +773,69 @@ async def detect(doc_id: str, page_num: int):
 async def official_detect(doc_id: str, page_num: int):
     """使用官方 PP-StructureV3 解析整页。"""
     doc_dir = UPLOAD_DIR / doc_id
-    try:
-        img_path = ensure_page_image(doc_dir, page_num)
-    except (FileNotFoundError, IndexError) as exc:
+    return await _official_page_response(doc_dir, page_num)
+
+
+async def _official_document_response(doc_id, doc_dir):
+    """执行官方多页解析并返回兼容结果。"""
+    pdf_path = doc_dir / "source.pdf"
+    is_pdf = pdf_path.exists()
+    if is_pdf:
+        document = fitz.open(str(pdf_path))
+        total_pages = len(document)
+        document.close()
+        page_paths = []
+        for page_num in range(1, total_pages + 1):
+            try:
+                page_paths.append(
+                    ensure_page_image(doc_dir, page_num)
+                )
+            except (FileNotFoundError, IndexError):
+                continue
+    else:
+        page_paths = sorted(doc_dir.glob("page_*.*"))
+
+    if not page_paths:
         raise HTTPException(
             status_code=404,
-            detail="page not found",
-        ) from exc
-
-    is_pdf = (doc_dir / "source.pdf").exists()
+            detail="document pages not found",
+        )
     try:
-        return await run_in_threadpool(
-            _official_parser.parse_page,
-            str(img_path),
-            page_num,
+        pages = await run_in_threadpool(
+            _official_parser.parse_pages,
+            [str(path) for path in page_paths],
             is_pdf,
         )
     except Exception as exc:
-        log.error("官方 PP-StructureV3 页面解析失败: %s", exc)
+        log.error("官方 PP-StructureV3 多页解析失败: %s", exc)
         raise HTTPException(
             status_code=503,
-            detail=f"官方 PP-StructureV3 解析失败: {exc}",
+            detail=f"官方 PP-StructureV3 多页解析失败: {exc}",
         ) from exc
+    return {
+        "doc_id": doc_id,
+        "pages": pages,
+        "is_pdf": is_pdf,
+        "table_merges": None,
+        "engine": {
+            "id": "official_v3",
+            "name": "PaddleOCR PP-StructureV3",
+            "page_count": len(pages),
+            "cross_page_table_merge": False,
+        },
+    }
+
+
+@app.post("/api/official/detect-all/{doc_id}")
+async def official_detect_all(doc_id: str):
+    """使用官方 PP-StructureV3 解析全部页面。"""
+    doc_dir = UPLOAD_DIR / doc_id
+    if not doc_dir.exists():
+        raise HTTPException(
+            status_code=404,
+            detail="document not found",
+        )
+    return await _official_document_response(doc_id, doc_dir)
 
 
 @app.post("/api/detect-all/{doc_id}")
@@ -729,6 +843,8 @@ async def detect_all(doc_id: str):
     doc_dir = UPLOAD_DIR / doc_id
     if not doc_dir.exists():
         return {"error": "document not found"}
+    if _document_engine_mode() == "official_v3":
+        return await _official_document_response(doc_id, doc_dir)
 
     pdf_path = doc_dir / "source.pdf"
     is_pdf = pdf_path.exists()

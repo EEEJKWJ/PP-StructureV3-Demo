@@ -265,3 +265,14 @@ class OfficialPPStructureParser:
             page_num=page_num,
             is_pdf=is_pdf,
         )
+
+    def parse_pages(self, image_paths, is_pdf=False):
+        """按顺序解析多页图片并返回 Demo 页面结果。"""
+        return [
+            self.parse_page(
+                image_path,
+                page_num=index,
+                is_pdf=is_pdf,
+            )
+            for index, image_path in enumerate(image_paths, 1)
+        ]

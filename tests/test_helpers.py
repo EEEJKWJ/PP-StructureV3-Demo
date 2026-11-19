@@ -424,11 +424,16 @@ class LayoutAndOcrServiceTests(unittest.TestCase):
                 "gpu",
                 "gpu_name",
                 "table_engine",
+                "document_engine",
             },
         )
         self.assertIn(status["status"], {"loading", "ready", "error"})
         self.assertIsInstance(status["ocr_available"], bool)
         self.assertIsInstance(status["gpu"], bool)
+        self.assertIn(
+            status["document_engine"],
+            {"legacy", "official_v3"},
+        )
 
 
 class DocumentServiceTests(unittest.TestCase):

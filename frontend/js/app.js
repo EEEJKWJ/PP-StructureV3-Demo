@@ -289,7 +289,12 @@ async function detectCurrent() {
       state.activePage,
     );
     const sourceTag = document.getElementById("sourceTag");
-    if (sourceData.text_source === "ocr") {
+    if (sourceData.text_source === "official_v3") {
+      sourceTag.innerHTML =
+        '<span class="source-tag pdf">官方 PP-StructureV3</span>';
+      document.getElementById("resultList").innerHTML =
+        '<div class="loading">正在执行官方整页解析（较慢）...</div>';
+    } else if (sourceData.text_source === "ocr") {
       sourceTag.innerHTML =
         '<span class="source-tag ocr">OCR 识别</span>';
       document.getElementById("resultList").innerHTML =
@@ -333,23 +338,8 @@ async function detectAll() {
   </div>`;
 
   try {
-    for (let page = 1; page <= totalPages; page++) {
-      progressElement.querySelector(".progress-text").textContent =
-        `正在检测第 ${page}/${totalPages} 页...`;
-      progressElement.querySelector(".fill").style.width =
-        `${((page - 0.5) / totalPages) * 100}%`;
-
-      if (!state.detectedPages[page]) {
-        state.detectedPages[page] = requirePageDetection(
-          await detectPage(state.docId, page),
-        );
-      }
-      progressElement.querySelector(".fill").style.width =
-        `${(page / totalPages) * 100}%`;
-    }
-
     progressElement.querySelector(".progress-text").textContent =
-      "正在做跨页表格合并分析...";
+      `正在解析全部 ${totalPages} 页，请稍候...`;
     const allData = await detectAllPages(state.docId);
     if (allData?.error) throw new Error(allData.error);
     if (!allData || !Array.isArray(allData.pages)) {
@@ -357,12 +347,23 @@ async function detectAll() {
     }
     state.allPagesData = allData;
 
-    for (const pageData of allData.pages) {
+    for (const rawPageData of allData.pages) {
+      const pageData = requirePageDetection(rawPageData);
       state.detectedPages[pageData.page] = pageData;
     }
 
+    const officialEngine = allData.engine?.id === "official_v3";
     const merges = allData.table_merges;
-    if (merges && merges.length > 0) {
+    if (officialEngine) {
+      progressElement.innerHTML = `<div class="detect-all-progress">
+        <div class="progress-text" style="color:#2e7d32">
+          ✓ 全部 ${totalPages} 页已完成官方 PP-StructureV3 解析
+        </div>
+        <div style="font-size:11px;color:#666;margin-top:4px">
+          当前官方适配层尚未执行跨页表格合并
+        </div>
+      </div>`;
+    } else if (merges && merges.length > 0) {
       progressElement.innerHTML = `<div class="detect-all-progress">
         <div class="progress-text" style="color:#2e7d32">
           ✓ 全部 ${totalPages} 页检测完成，${merges.length} 处跨页表格已合并
@@ -413,13 +414,19 @@ async function pollModelStatus() {
         const tableLabel =
           data.table_engine && data.table_engine !== "none"
             ? ` | 表格: ${
-              data.table_engine === "paddle"
+              data.table_engine === "official"
+                ? "官方 PP-StructureV3"
+                : data.table_engine === "paddle"
                 ? "PP-TableMagic V2"
                 : "RapidTable"
             }`
             : "";
+        const documentLabel =
+          data.document_engine === "official_v3"
+            ? " | 文档: 官方 PP-StructureV3"
+            : " | 文档: Legacy";
         element.textContent =
-          "模型就绪" + gpuLabel + ocrLabel + tableLabel;
+          "模型就绪" + gpuLabel + ocrLabel + tableLabel + documentLabel;
         element.style.background = "#34a853";
         if (!runtime.modelReady) {
           runtime.modelReady = true;
