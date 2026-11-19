@@ -180,6 +180,8 @@ def paired_summary(results):
                 "text_recall",
                 "mean_best_iou",
                 "match_rate_iou_0_5",
+                "cer",
+                "wer",
             )
         },
         "custom": {
@@ -190,6 +192,8 @@ def paired_summary(results):
                 "text_recall",
                 "mean_best_iou",
                 "match_rate_iou_0_5",
+                "cer",
+                "wer",
             )
         },
     }
@@ -292,6 +296,7 @@ def main(argv=None):
     )
     parser.add_argument("--comparison-id")
     parser.add_argument("--resume")
+    parser.add_argument("--retry-failed", action="store_true")
     args = parser.parse_args(argv)
     if args.limit < 1 or args.start < 0:
         parser.error("limit/start 参数无效")
@@ -360,7 +365,11 @@ def main(argv=None):
             samples,
             start=args.start,
         ):
-            if sample.sample_id in latest:
+            if sample.sample_id in latest and not (
+                args.retry_failed
+                and latest[sample.sample_id]["custom"]["status"]
+                != "success"
+            ):
                 continue
             image_path = Path(temp_dir) / f"{index}.jpg"
             image_path.write_bytes(sample.image_bytes)
@@ -389,6 +398,7 @@ def main(argv=None):
                 str(image_path),
                 server._table_service.recognize,
                 server._detect_table_blocks_with_fallback,
+                True,
             )
             injection_ms = round(
                 (time.perf_counter() - injection_started) * 1000,
@@ -418,6 +428,10 @@ def main(argv=None):
             custom["fallback_detection"] = bool(
                 custom_block
                 and custom_block.get("table_fallback_detection")
+            )
+            custom["full_image_fallback"] = bool(
+                custom_block
+                and custom_block.get("full_image_fallback")
             )
             custom["model"] = (
                 custom_block.get("table_model")

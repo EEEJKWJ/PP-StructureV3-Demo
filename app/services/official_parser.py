@@ -2,6 +2,8 @@
 
 import threading
 
+from PIL import Image
+
 from app.engines.base import parse_html_table, restore_cell_newlines
 from app.services.structure import StructureService
 
@@ -258,6 +260,7 @@ def apply_custom_table_results(
     image_path,
     recognizer,
     fallback_table_detector=None,
+    allow_full_image_table=False,
 ):
     """用当前注册表格模型替换官方 table block 内容。"""
     blocks = page_result.get("blocks") or []
@@ -270,6 +273,25 @@ def apply_custom_table_results(
                 fallback_blocks,
             )
             blocks = page_result.get("blocks") or []
+            if (
+                fallback_count == 0
+                and allow_full_image_table
+            ):
+                with Image.open(image_path) as image:
+                    width, height = image.size
+                fallback_count = _add_fallback_table_blocks(
+                    page_result,
+                    [{
+                        "label": "table",
+                        "bbox": [0, 0, width, height],
+                        "score": 0.0,
+                        "full_image_fallback": True,
+                    }],
+                )
+                blocks = page_result.get("blocks") or []
+                for block in blocks:
+                    if block.get("label") == "table":
+                        block["full_image_fallback"] = True
     success_count = 0
     failures = []
     for block in blocks:
@@ -322,6 +344,11 @@ def apply_custom_table_results(
     context["custom_table_count"] = success_count
     context["custom_table_failures"] = failures
     context["fallback_table_count"] = fallback_count
+    context["full_image_fallback_count"] = sum(
+        bool(block.get("full_image_fallback"))
+        for block in blocks
+        if block.get("label") == "table"
+    )
     return page_result
 
 

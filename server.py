@@ -180,6 +180,15 @@ def _detect_table_blocks_with_fallback(image_path):
     return detect_layout(image_path)
 
 
+def _allow_full_image_table_fallback():
+    """是否允许无表格框时将整张图片作为表格处理。"""
+    value = os.environ.get(
+        "PP_TABLE_FULL_IMAGE_FALLBACK",
+        "false",
+    ).strip().lower()
+    return value in {"1", "true", "yes", "on"}
+
+
 def _sync_table_engine_state():
     global _table_engine, _table_engine_type
     _table_engine = _table_service.engine
@@ -713,6 +722,7 @@ async def _official_page_response(doc_dir: Path, page_num: int):
                 str(img_path),
                 _table_service.recognize,
                 _detect_table_blocks_with_fallback,
+                _allow_full_image_table_fallback(),
             )
             result["document_engine"] = mode
             result["engine"]["table_engine"] = "custom"
@@ -840,6 +850,7 @@ def _apply_custom_tables_to_pages(pages, page_paths):
             str(image_path),
             _table_service.recognize,
             _detect_table_blocks_with_fallback,
+            _allow_full_image_table_fallback(),
         )
         page["document_engine"] = "official_v3_custom_table"
         page["engine"]["table_engine"] = "custom"

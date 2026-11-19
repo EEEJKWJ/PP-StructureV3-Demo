@@ -214,6 +214,53 @@ class OfficialResultNormalizationTests(unittest.TestCase):
             1,
         )
 
+    def test_full_image_table_fallback_is_explicit(self):
+        payload = copy.deepcopy(official_payload())
+        payload["res"]["parsing_res_list"] = [
+            block
+            for block in payload["res"]["parsing_res_list"]
+            if block["block_label"] != "table"
+        ]
+        payload["res"]["table_res_list"] = []
+        page = normalize_official_result(payload)
+
+        def Recognizer(image_path, bbox):
+            self.assertEqual(bbox, [0, 0, 100, 80])
+            return {
+                "cells": [{
+                    "row": 0,
+                    "col": 0,
+                    "text": "full",
+                    "bbox": [1, 1, 20, 20],
+                }],
+                "html": "<table><tr><td>full</td></tr></table>",
+                "model": {"id": "custom"},
+            }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            image_path = Path(temp_dir) / "table.png"
+            Image.new("RGB", (100, 80), "white").save(image_path)
+            result = apply_custom_table_results(
+                page,
+                str(image_path),
+                Recognizer,
+                lambda path: [],
+                True,
+            )
+
+        table = next(
+            block
+            for block in result["blocks"]
+            if block["label"] == "table"
+        )
+        self.assertTrue(table["full_image_fallback"])
+        self.assertEqual(
+            result["official_context"][
+                "full_image_fallback_count"
+            ],
+            1,
+        )
+
 
 class OfficialParserServiceTests(unittest.TestCase):
     def test_engine_is_loaded_lazily_once(self):
