@@ -19,12 +19,14 @@ from PIL import Image
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 
 from app.services.layout import LayoutService
 from app.services.ocr import OCRService
 from app.services.document import DocumentService
 from app.services.table import TableService
 from app.services.structure import StructureService
+from app.services.official_parser import OfficialPPStructureParser
 from app.evaluation.reports import EvaluationReports
 from app.datasets.registry import DatasetRegistry
 from app.evaluation.workbench import SampleWorkbenchService
@@ -130,6 +132,7 @@ _evaluation_reports = EvaluationReports(Path("experiments"))
 _dataset_registry = DatasetRegistry()
 _sample_workbench = SampleWorkbenchService(_dataset_registry, log)
 _comparison_reports = ComparisonReports(Path("experiments/comparisons"))
+_official_parser = OfficialPPStructureParser(log)
 
 
 def _sync_table_engine_state():
@@ -691,6 +694,34 @@ async def detect(doc_id: str, page_num: int):
         "text_source": text_source,
         "structured": structured,
     }
+
+
+@app.post("/api/official/detect/{doc_id}/{page_num}")
+async def official_detect(doc_id: str, page_num: int):
+    """使用官方 PP-StructureV3 解析整页。"""
+    doc_dir = UPLOAD_DIR / doc_id
+    try:
+        img_path = ensure_page_image(doc_dir, page_num)
+    except (FileNotFoundError, IndexError) as exc:
+        raise HTTPException(
+            status_code=404,
+            detail="page not found",
+        ) from exc
+
+    is_pdf = (doc_dir / "source.pdf").exists()
+    try:
+        return await run_in_threadpool(
+            _official_parser.parse_page,
+            str(img_path),
+            page_num,
+            is_pdf,
+        )
+    except Exception as exc:
+        log.error("官方 PP-StructureV3 页面解析失败: %s", exc)
+        raise HTTPException(
+            status_code=503,
+            detail=f"官方 PP-StructureV3 解析失败: {exc}",
+        ) from exc
 
 
 @app.post("/api/detect-all/{doc_id}")
