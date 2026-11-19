@@ -1,3 +1,4 @@
+import copy
 import logging
 import os
 import tempfile
@@ -160,6 +161,56 @@ class OfficialResultNormalizationTests(unittest.TestCase):
         )
         self.assertEqual(
             result["official_context"]["custom_table_count"],
+            1,
+        )
+
+    def test_custom_table_uses_layout_fallback_when_official_misses(self):
+        payload = copy.deepcopy(official_payload())
+        payload["res"]["parsing_res_list"] = [
+            block
+            for block in payload["res"]["parsing_res_list"]
+            if block["block_label"] != "table"
+        ]
+        payload["res"]["table_res_list"] = []
+        page = normalize_official_result(payload)
+
+        def Fallback(image_path):
+            self.assertEqual(image_path, "page.png")
+            return [{
+                "label": "table",
+                "bbox": [0, 0, 100, 80],
+                "score": 0.88,
+            }]
+
+        def Recognizer(image_path, bbox):
+            self.assertEqual(bbox, [0, 0, 100, 80])
+            return {
+                "cells": [{
+                    "row": 0,
+                    "col": 0,
+                    "text": "fallback",
+                    "bbox": [1, 1, 20, 20],
+                }],
+                "html": "<table><tr><td>fallback</td></tr></table>",
+                "model": {"id": "custom"},
+            }
+
+        result = apply_custom_table_results(
+            page,
+            "page.png",
+            Recognizer,
+            Fallback,
+        )
+
+        table = next(
+            block
+            for block in result["blocks"]
+            if block["label"] == "table"
+        )
+        self.assertTrue(table["table_fallback_detection"])
+        self.assertEqual(table["table_source"], "custom")
+        self.assertEqual(
+            result["official_context"]["fallback_table_count"],
             1,
         )
 

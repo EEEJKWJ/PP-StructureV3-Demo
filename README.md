@@ -342,6 +342,8 @@ python launch_pp_structurev3.py
 ```
 
 官方表格结果会保存在 `official_table` 中，便于对照和回退。
+若官方版面没有检测出 table block，自定义表格模式会按需调用当前
+`PP-DocLayoutV3` 补表格框，再交给活动表格模型。
 
 官方多页接口暂不执行跨页表格合并，并通过
 `cross_page_table_merge=false` 明确标记。

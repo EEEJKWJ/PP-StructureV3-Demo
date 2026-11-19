@@ -174,6 +174,12 @@ def _official_parser_for_mode(mode):
     return _official_parser
 
 
+def _detect_table_blocks_with_fallback(image_path):
+    """仅在官方漏检表格时加载当前版面模型补框。"""
+    _load_model()
+    return detect_layout(image_path)
+
+
 def _sync_table_engine_state():
     global _table_engine, _table_engine_type
     _table_engine = _table_service.engine
@@ -706,6 +712,7 @@ async def _official_page_response(doc_dir: Path, page_num: int):
                 result,
                 str(img_path),
                 _table_service.recognize,
+                _detect_table_blocks_with_fallback,
             )
             result["document_engine"] = mode
             result["engine"]["table_engine"] = "custom"
@@ -832,6 +839,7 @@ def _apply_custom_tables_to_pages(pages, page_paths):
             page,
             str(image_path),
             _table_service.recognize,
+            _detect_table_blocks_with_fallback,
         )
         page["document_engine"] = "official_v3_custom_table"
         page["engine"]["table_engine"] = "custom"

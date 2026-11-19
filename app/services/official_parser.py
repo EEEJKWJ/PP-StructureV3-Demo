@@ -207,9 +207,69 @@ def normalize_official_result(
     }
 
 
-def apply_custom_table_results(page_result, image_path, recognizer):
+def _add_fallback_table_blocks(page_result, fallback_blocks):
+    """把回退版面模型找到的表格按阅读位置加入页面。"""
+    table_blocks = [
+        block
+        for block in fallback_blocks or []
+        if block.get("label") == "table" and block.get("bbox")
+    ]
+    if not table_blocks:
+        return 0
+    blocks = page_result.setdefault("blocks", [])
+    for index, source in enumerate(table_blocks):
+        bbox = _as_bbox(source.get("bbox"))
+        later_orders = [
+            block["order"]
+            for block in blocks
+            if block.get("bbox")
+            and block["bbox"][1] > bbox[1]
+        ]
+        order = min(later_orders) if later_orders else (
+            max(
+                (block.get("order", 0) for block in blocks),
+                default=-1,
+            )
+            + 1
+        )
+        for block in blocks:
+            if block.get("order", 0) >= order:
+                block["order"] += 1
+        blocks.append({
+            "label": "table",
+            "bbox": bbox,
+            "score": float(source.get("score", 1.0)),
+            "order": order,
+            "official_block_id": f"fallback-table-{index}",
+            "ocr_text": "",
+            "cells": None,
+            "table_html": "",
+            "cell_bbox_available": False,
+            "table_source": "pending",
+            "table_model": None,
+            "table_fallback_detection": True,
+        })
+    blocks.sort(key=lambda item: item["order"])
+    return len(table_blocks)
+
+
+def apply_custom_table_results(
+    page_result,
+    image_path,
+    recognizer,
+    fallback_table_detector=None,
+):
     """用当前注册表格模型替换官方 table block 内容。"""
     blocks = page_result.get("blocks") or []
+    fallback_count = 0
+    if not any(block.get("label") == "table" for block in blocks):
+        if fallback_table_detector is not None:
+            fallback_blocks = fallback_table_detector(image_path) or []
+            fallback_count = _add_fallback_table_blocks(
+                page_result,
+                fallback_blocks,
+            )
+            blocks = page_result.get("blocks") or []
     success_count = 0
     failures = []
     for block in blocks:
@@ -261,6 +321,7 @@ def apply_custom_table_results(page_result, image_path, recognizer):
     context = page_result.setdefault("official_context", {})
     context["custom_table_count"] = success_count
     context["custom_table_failures"] = failures
+    context["fallback_table_count"] = fallback_count
     return page_result
 
 
