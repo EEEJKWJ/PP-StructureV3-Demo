@@ -36,6 +36,7 @@ class OCRService:
         self.model_type = ""
         self._download_lock = threading.Lock()
         self._engine_lock = threading.Lock()
+        self._inference_lock = threading.Lock()
 
     def download_models(self):
         """下载缺失的 OCR 模型，并缓存到项目模型目录。"""
@@ -169,6 +170,33 @@ class OCRService:
         """识别单个版面区域，用于文字层乱码回退。"""
         result = self.recognize_blocks(image_path, [block])
         return result.get(0, [])
+
+    def recognize_crop(self, image):
+        """识别整张表格裁图，返回裁图局部坐标。"""
+        engine = self.get_engine()
+        if engine is None or image is None or image.size == 0:
+            return []
+        with self._inference_lock:
+            engine.run(image)
+            results = list(engine.results or [])
+        if not results:
+            return []
+        lines = []
+        for item in results:
+            position = item["rec_pos"]
+            lines.append({
+                "text": item["text"],
+                "bbox": [
+                    int(position[0][0]),
+                    int(position[0][1]),
+                    int(position[2][0]),
+                    int(position[2][1]),
+                ],
+            })
+        lines = self.nms_lines(lines)
+        lines = self.merge_suffix_prefix_lines(lines)
+        lines.sort(key=lambda line: (line["bbox"][1], line["bbox"][0]))
+        return lines
 
     def status(self):
         """返回与现有模型状态接口兼容的 OCR 信息。"""

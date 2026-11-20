@@ -325,6 +325,31 @@ class OfficialParserServiceTests(unittest.TestCase):
         self.assertEqual([page["page"] for page in pages], [1, 2])
         self.assertEqual(engine.calls, ["page1.png", "page2.png"])
 
+    def test_parse_page_with_image_returns_corrected_page(self):
+        corrected_image = object()
+
+        class Result:
+            json = official_payload()
+
+            def get(self, key, default=None):
+                if key == "doc_preprocessor_res":
+                    return {"output_img": corrected_image}
+                return default
+
+        class Engine:
+            def predict(self, image_path, **options):
+                return [Result()]
+
+        parser = OfficialPPStructureParser(
+            logging.getLogger("test-official-parser"),
+            engine_factory=lambda: Engine(),
+        )
+
+        page, image = parser.parse_page_with_image("page.png")
+
+        self.assertEqual(page["page"], 1)
+        self.assertIs(image, corrected_image)
+
 
 class OfficialParserApiTests(unittest.TestCase):
     def test_official_endpoint_returns_normalized_page(self):

@@ -392,6 +392,14 @@ class OfficialPPStructureParser:
 
     def parse_page_result(self, image_path, predict_options=None):
         """执行官方整页解析并返回官方原始 JSON。"""
+        payload, _ = self.parse_page_context(
+            image_path,
+            predict_options=predict_options,
+        )
+        return payload
+
+    def parse_page_context(self, image_path, predict_options=None):
+        """执行官方解析并返回 JSON 与预处理后的页面图像。"""
         engine = self.ensure_loaded()
         options = dict(predict_options or {})
         with self._inference_lock:
@@ -404,7 +412,12 @@ class OfficialPPStructureParser:
         payload = result.json if hasattr(result, "json") else result
         if not isinstance(payload, dict):
             raise ValueError("官方 PP-StructureV3 返回格式无效")
-        return payload
+        page_image = None
+        if hasattr(result, "get"):
+            preprocess_result = result.get("doc_preprocessor_res")
+            if isinstance(preprocess_result, dict):
+                page_image = preprocess_result.get("output_img")
+        return payload, page_image
 
     def parse_page(
         self,
@@ -439,3 +452,22 @@ class OfficialPPStructureParser:
             )
             for index, image_path in enumerate(image_paths, 1)
         ]
+
+    def parse_page_with_image(
+        self,
+        image_path,
+        page_num=None,
+        is_pdf=False,
+        predict_options=None,
+    ):
+        """解析单页并同时返回预处理后的页面图像。"""
+        payload, page_image = self.parse_page_context(
+            image_path,
+            predict_options=predict_options,
+        )
+        result = normalize_official_result(
+            payload,
+            page_num=page_num,
+            is_pdf=is_pdf,
+        )
+        return result, page_image

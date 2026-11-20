@@ -360,6 +360,12 @@ $env:PP_TABLE_FULL_IMAGE_FALLBACK = "true"
 100 条官方表格与当前自定义表格的对比方法和结果见
 [docs/OFFICIAL_TABLE_COMPARISON.md](docs/OFFICIAL_TABLE_COMPARISON.md)。
 
+官方页面预处理、表格局部增强、官方结构整表 OCR 和当前自定义模型的五组
+消融实验见
+[docs/TABLE_PREPROCESS_EXPERIMENT.md](docs/TABLE_PREPROCESS_EXPERIMENT.md)。
+本轮五组共同成功的 58 条中，当前自定义 B 的 TEDS/S-TEDS、文本召回和 bbox
+均最好；现有局部增强组合总体退化。实验能力默认关闭，不影响现有解析流程。
+
 ### 模型对比与报告
 
 对同一数据集范围运行多个模型：

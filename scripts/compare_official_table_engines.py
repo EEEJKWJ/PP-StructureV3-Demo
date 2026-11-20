@@ -22,8 +22,12 @@ from app.evaluation.metrics import (
     nearest_rank_percentile,
 )
 from app.evaluation.runner import atomic_write_json
+from app.evaluation.table_canonical import canonical_metrics
 from app.evaluation.teds import calculate_html_metrics
 from app.services.official_parser import apply_custom_table_results
+
+
+_GROUNDED_TRUTH_UNSET = object()
 
 
 def select_table_block(page, ground_truth_bbox):
@@ -44,7 +48,11 @@ def select_table_block(page, ground_truth_bbox):
     )
 
 
-def block_metrics(block, truth):
+def block_metrics(
+    block,
+    truth,
+    grounded_truth=_GROUNDED_TRUTH_UNSET,
+):
     if block is None:
         return {
             "status": "no_table_block",
@@ -60,14 +68,20 @@ def block_metrics(block, truth):
         block.get("table_html"),
         truth.get("html"),
     )
-    cell_metrics = grounded_cell_metrics(
-        block.get("cells") or [],
-        truth.get("cells") or [],
+    if grounded_truth is _GROUNDED_TRUTH_UNSET:
+        grounded_truth = truth
+    cell_metrics = (
+        grounded_cell_metrics(
+            block.get("cells") or [],
+            grounded_truth.get("cells") or [],
+        )
+        if grounded_truth is not None
+        else None
     ) or {}
     has_result = bool(
         block.get("table_html") or block.get("cells")
     )
-    return {
+    metrics = {
         "status": "success" if has_result else "empty_table_result",
         "teds": html_metrics.get("teds"),
         "teds_s": html_metrics.get("teds_s"),
@@ -78,7 +92,29 @@ def block_metrics(block, truth):
         ),
         "cer": cell_metrics.get("cer"),
         "wer": cell_metrics.get("wer"),
+        "grounding_status": (
+            "available"
+            if grounded_truth is not None
+            else "unavailable_page_alignment"
+        ),
     }
+    if grounded_truth is not None:
+        metrics.update(
+            canonical_metrics(
+                block.get("table_html"),
+                block.get("cells") or [],
+                grounded_truth,
+            )
+        )
+    else:
+        metrics.update({
+            "teds_canonical": None,
+            "teds_s_canonical": None,
+            "text_recall_canonical": None,
+            "cer_canonical": None,
+            "wer_canonical": None,
+        })
+    return metrics
 
 
 def mean_metric(rows, key):

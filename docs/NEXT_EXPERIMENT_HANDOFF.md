@@ -1,5 +1,11 @@
 # PP-StructureV3 Demo 下一阶段任务交接
 
+> 2026-11-20 更新：五组 A/B/C/D/E 的 1 条 smoke、5 条预实验和 100 条正式
+> 实验均已完成。正式指标和原因分析见
+> [`TABLE_PREPROCESS_EXPERIMENT.md`](TABLE_PREPROCESS_EXPERIMENT.md)。
+> 当前结论是 B 仍为综合最优，A/C/D/E 不应接入默认流程。下一轮从
+> “组合方案比较”改为页面预处理和局部增强的单因素消融。
+
 更新日期：2026-11-20
 
 ## 1. 当前仓库状态
